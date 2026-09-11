@@ -57,6 +57,11 @@ fidelis mcp serve             # runs the MCP server over stdio
 > The import name and CLI remain `fidelis`. The separate PyPI project named
 > `fidelis` belongs to [NGdust/fidelis](https://github.com/NGdust/fidelis).
 
+> **Unreleased clients.** `--client copilot`, `--client gemini`, and
+> `--client openclaw` are on `main` but not in 0.0.95. Until the next release,
+> install from source instead of step 1's pinned package:
+> `python3 -m pip install "git+https://github.com/hermes-labs-ai/fidelis.git"`.
+
 Linux users swap `brew install ollama` for the equivalent install from [ollama.com](https://ollama.com). [See Requirements](#requirements).
 
 Fidelis Memory 0.0.95 is also published in the
@@ -111,9 +116,9 @@ The 3600s window is non-configurable in our current contract.
 
 The non-configurable qualifier survives. So does every other detail you wrote down.
 
-## What this enables in Codex, Claude Code, and GitHub Copilot CLI
+## What this enables in Codex, Claude Code, GitHub Copilot CLI, Gemini CLI, and OpenClaw
 
-Once `fidelis mcp install --client codex`, `--client copilot`, or the default Claude install is run, ask your agent:
+Once `fidelis mcp install --client codex`, `--client copilot`, `--client gemini`, `--client openclaw`, or the default Claude install is run, ask your agent:
 
 - *"What did we decide about auth?"*
 - *"What failed last time we tried this migration?"*
@@ -149,6 +154,78 @@ the equivalent registration is
 Copilot does not currently expose a hook or automatic-recall mechanism to
 third-party servers, so recall happens when the agent calls the
 `fidelis_recall`, `fidelis_orient`, or `fidelis_health` tools.
+
+### Gemini CLI
+
+Gemini CLI has native MCP management — `gemini mcp add|remove|list`, shipped
+in v0.1.19 — and Fidelis registers itself through it rather than editing
+`settings.json`. That matters: Gemini reads `settings.json` as
+JSON-with-comments and its own writer round-trips your `//` and `/* */`
+comments. A rewrite by Fidelis would silently delete them.
+
+> **Unreleased.** `--client gemini` is on `main` and not in the pinned
+> 0.0.95 package installed in the [Quickstart](#quickstart); it ships in the
+> next release. Install from source to use it today.
+
+```bash
+fidelis mcp install --client gemini      # gemini mcp add → ~/.gemini/settings.json
+gemini                                   # restart, or run /mcp reload in a live session
+gemini mcp list                          # shows "fidelis" and whether it connects
+fidelis mcp uninstall --client gemini    # gemini mcp remove, verified
+```
+
+`--scope project` targets `./.gemini/settings.json` instead of the default
+`--scope user` (`~/.gemini/settings.json`); Fidelis refuses `--scope project`
+in your home directory, where Gemini collapses the two to the same file.
+Requires Gemini CLI v0.1.19 or newer on `PATH`, and an auth method already
+configured — Gemini refuses every `gemini mcp` subcommand until one is.
+
+Because `gemini mcp add` overwrites a same-named entry without asking and
+`gemini mcp remove` exits 0 even when the name is absent, Fidelis reads the
+targeted `settings.json` back after every run. It refuses to touch a `fidelis`
+entry it does not recognize (`--force` overrides), and reports a silent no-op
+or an unexpected entry as a failure rather than as success. Unrelated servers,
+their `env` secrets, other settings keys, and the file's permission bits are
+left as they were.
+
+Recall happens when the agent calls the `fidelis_recall`, `fidelis_orient`, or
+`fidelis_health` tools.
+
+### OpenClaw
+
+OpenClaw keeps outbound MCP servers under `mcp.servers` in its JSON5 config
+(`~/.openclaw/openclaw.json`, or `$OPENCLAW_CONFIG_PATH`). Because JSON5 allows
+comments and trailing commas, Fidelis neither writes that file nor parses it:
+it delegates every write to the documented `openclaw mcp add` CLI, and asks
+OpenClaw's own read-only surface — `openclaw mcp show fidelis --json`, falling
+back to `openclaw mcp list --json` — both before writing and afterwards to
+confirm what landed.
+
+> **Unreleased.** `--client openclaw` is on `main` and not in the pinned
+> 0.0.95 package installed in the [Quickstart](#quickstart); it ships in the
+> next release. Install from source to use it today.
+
+```bash
+fidelis mcp install --client openclaw    # openclaw mcp add fidelis --command … --arg …
+openclaw mcp reload                      # pick up the new server
+openclaw mcp status --verbose            # confirm the saved config
+openclaw mcp doctor fidelis --probe      # verify it connects
+fidelis mcp uninstall --client openclaw  # removes only the fidelis entry
+```
+
+The `openclaw` binary **is** required here, because it owns the write and is the
+only reader that can be trusted with a JSON5 config. Use
+`--settings /path/to/openclaw.json` to target a different config; Fidelis passes
+it as `$OPENCLAW_CONFIG_PATH` on every delegated call, reads included, so the
+state it reads back is the state of the file OpenClaw just wrote. If you prefer
+to run the host CLI yourself, the
+equivalent registration is
+`openclaw mcp add fidelis --command "$(python3 -c 'import sys;print(sys.executable)')" --arg "$(python3 -c 'import fidelis.mcp_cmd as m;print(m.MCP_SERVER_FILE)')"`.
+Install and uninstall refuse to touch an `mcp.servers.fidelis` entry that is not
+ours unless you pass `--force`, and exit non-zero rather than claiming success
+whenever the read-back does not prove the change landed — including when
+OpenClaw cannot report the entry at all, which is treated as unknown, never as
+"nothing there".
 
 ## Use cases & ROI
 
