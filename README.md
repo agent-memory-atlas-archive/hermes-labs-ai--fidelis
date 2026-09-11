@@ -11,7 +11,7 @@ Stop re-explaining context to your agent. fidelis returns your original notes ve
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](#known-limitations)
 [![CI tests: 368 passing](https://img.shields.io/badge/CI%20tests-368%20passing-brightgreen)](tests/)
-[![Official MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-5b5bd6)](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.0.95)
+[![Official MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-5b5bd6)](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.0.96)
 [![Made by Hermes Labs](https://img.shields.io/badge/made%20by-Hermes%20Labs-purple)](https://hermes-labs.ai)
 
 ```
@@ -45,7 +45,7 @@ brew install ollama && ollama serve &
 ollama pull nomic-embed-text
 
 # 1. install Fidelis Memory from PyPI
-python3 -m pip install "fidelis-memory==0.0.95"
+python3 -m pip install "fidelis-memory==0.0.96"
 fidelis init                  # background service (launchd / systemd)
 fidelis watch ~/notes         # auto-ingests markdown
 fidelis mcp install --client codex   # or omit for Claude Code
@@ -57,26 +57,21 @@ fidelis mcp serve             # runs the MCP server over stdio
 > The import name and CLI remain `fidelis`. The separate PyPI project named
 > `fidelis` belongs to [NGdust/fidelis](https://github.com/NGdust/fidelis).
 
-> **Unreleased clients.** `--client copilot`, `--client gemini`, and
-> `--client openclaw` are on `main` but not in 0.0.95. Until the next release,
-> install from source instead of step 1's pinned package:
-> `python3 -m pip install "git+https://github.com/hermes-labs-ai/fidelis.git"`.
-
 Linux users swap `brew install ollama` for the equivalent install from [ollama.com](https://ollama.com). [See Requirements](#requirements).
 
-Fidelis Memory 0.0.95 is also published in the
-[official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.0.95)
+Fidelis Memory 0.0.96 is also published in the
+[official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.0.96)
 as `io.github.hermes-labs-ai/fidelis-memory`. Registry-aware clients can launch
 the same released server directly from PyPI:
 
 ```bash
-uvx --from "fidelis-memory==0.0.95" fidelis mcp serve
+uvx --from "fidelis-memory==0.0.96" fidelis mcp serve
 ```
 
 This starts the MCP stdio process; run `fidelis init` first when the local
 Fidelis service and store have not already been configured. Version 0.0.94
 introduced supported Codex MCP installation and context-sensitive orientation;
-0.0.95 added the independently discoverable registry release.
+0.0.96 added the independently discoverable registry release.
 
 ## What you notice immediately
 
@@ -136,10 +131,6 @@ directory (`~/.copilot` by default, or `$COPILOT_HOME`). Fidelis writes the
 documented stdio entry there atomically, backing up any existing file and
 leaving other servers untouched:
 
-> **Unreleased.** `--client copilot` is on `main` and not in the pinned
-> 0.0.95 package installed in the [Quickstart](#quickstart); it ships in the
-> next release. Install from source to use it today.
-
 ```bash
 fidelis mcp install --client copilot     # writes ~/.copilot/mcp-config.json
 copilot                                  # restart, then /mcp list shows "fidelis"
@@ -162,10 +153,6 @@ in v0.1.19 — and Fidelis registers itself through it rather than editing
 `settings.json`. That matters: Gemini reads `settings.json` as
 JSON-with-comments and its own writer round-trips your `//` and `/* */`
 comments. A rewrite by Fidelis would silently delete them.
-
-> **Unreleased.** `--client gemini` is on `main` and not in the pinned
-> 0.0.95 package installed in the [Quickstart](#quickstart); it ships in the
-> next release. Install from source to use it today.
 
 ```bash
 fidelis mcp install --client gemini      # gemini mcp add → ~/.gemini/settings.json
@@ -200,10 +187,6 @@ it delegates every write to the documented `openclaw mcp add` CLI, and asks
 OpenClaw's own read-only surface — `openclaw mcp show fidelis --json`, falling
 back to `openclaw mcp list --json` — both before writing and afterwards to
 confirm what landed.
-
-> **Unreleased.** `--client openclaw` is on `main` and not in the pinned
-> 0.0.95 package installed in the [Quickstart](#quickstart); it ships in the
-> next release. Install from source to use it today.
 
 ```bash
 fidelis mcp install --client openclaw    # openclaw mcp add fidelis --command … --arg …
@@ -349,7 +332,7 @@ After `fidelis init`:
 
 To stop: `fidelis init --uninstall`. To wipe: `rm -rf ~/.cogito ~/.fidelis`.
 
-## Known limitations (v0.0.95)
+## Known limitations (v0.0.96)
 
 - **Pre-release.** Python function names and CLI commands may change. Pin the version if you build on it.
 - **Best on macOS Sequoia / Ubuntu 24.04 LTS.** Other OSes likely work but aren't gate-tested.

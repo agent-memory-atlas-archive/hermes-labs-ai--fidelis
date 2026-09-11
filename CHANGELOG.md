@@ -2,6 +2,8 @@
 
 # Unreleased
 
+## v0.0.96 — 2026-09-10
+
 - The bundled MCP server now answers the base-protocol `ping` request with an
   empty result instead of `-32601 method not found`. Gemini CLI's `gemini mcp
   list` pings after connecting, so a healthy Fidelis server — tools listed,
