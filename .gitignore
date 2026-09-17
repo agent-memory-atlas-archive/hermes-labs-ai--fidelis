@@ -18,6 +18,11 @@ snapshot.md
 PENDING-PAPER*.md
 TODO.md
 
+# Internal handoffs and generated local smoke-test artifacts are not public sources.
+docs/internal/
+docs/LAUNCH_DEFENSE.md
+receipts/
+
 # Benchmark run-log artifacts (outputs, not source)
 *.log
 bench/runs/
