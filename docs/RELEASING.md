@@ -23,10 +23,10 @@ package. They do not set the current Fidelis package version.
 Every release must carry the same version in:
 
 - `pyproject.toml` and `src/fidelis/__init__.py`;
-- `server.json` and `gemini-extension.json`;
+- `server.json`, `gemini-extension.json`, and the Claude plugin manifests;
 - `CITATION.cff` and `codemeta.json`;
 - current install commands in `README.md`, `llms.txt`, and
-  `docs/full-reference.md`; and
+  `docs/full-reference.md`, plus container metadata; and
 - the public-install assertions in `tests/test_public_install_truth.py`.
 
 Historical changelog text and protocol-marker versions are not mechanically
@@ -48,6 +48,7 @@ Use this order in the GitHub release body:
 
 For 0.1.0 use the title `Fidelis Memory 0.1.0 — local-first memory across five
 agent clients` and the body in [`releases/0.1.0.md`](releases/0.1.0.md).
+For 0.2.0 use the title and body in [`releases/0.2.0.md`](releases/0.2.0.md).
 
 ## Release sequence
 

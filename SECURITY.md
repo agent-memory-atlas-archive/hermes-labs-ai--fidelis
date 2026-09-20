@@ -36,6 +36,6 @@ does not run are out of scope.
 ## Supported Versions
 
 Security updates are applied to the latest release only. fidelis is
-pre-release software (0.1.0); expect breaking changes between versions.
+pre-release software (0.2.0); expect breaking changes between versions.
 
 Thank you for helping keep fidelis safe.

@@ -37,7 +37,7 @@ What fidelis is:
 
 Fidelis is deliberately narrower than a hosted memory platform. Check the
 [user-fit matrix](docs/user-fit.md) before installing: it names the workflows
-0.1.0 supports, the prerequisites it assumes, and the cases it does not yet
+0.2.0 supports, the prerequisites it assumes, and the cases it does not yet
 serve.
 
 ---
@@ -45,7 +45,9 @@ serve.
 ## Registries
 
 - [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.1.0) —
-  `io.github.hermes-labs-ai/fidelis-memory`, latest published version 0.1.0.
+  `io.github.hermes-labs-ai/fidelis-memory`, currently registered at version
+  0.1.0. The 0.2.0 manifest is included in this release and must be published
+  separately after its package release.
 - [Glama MCP server directory](https://glama.ai/mcp/servers/hermes-labs-ai/fidelis) —
   independent third-party server listing.
 
@@ -69,7 +71,7 @@ brew install ollama && ollama serve &
 ollama pull nomic-embed-text
 
 # 1. install Fidelis Memory from PyPI
-python3 -m pip install "fidelis-memory==0.1.0"
+python3 -m pip install "fidelis-memory==0.2.0"
 fidelis init                  # background service (launchd / systemd)
 fidelis watch ~/notes         # auto-ingests markdown
 fidelis mcp install --client codex   # or omit for Claude Code
@@ -81,7 +83,7 @@ Verify the installed release and the local service before configuring a client:
 
 ```bash
 python3 -c 'import fidelis; print(fidelis.__version__)'
-# expected: 0.1.0
+# expected: 0.2.0
 fidelis health
 # expected prefix: status: ok  |  memories:
 ```
@@ -97,10 +99,10 @@ fidelis query 'amber heron'
 ```
 
 Using Gemini CLI? After the local prerequisites and `fidelis init`, install
-the native v0.1.0 extension directly:
+the native v0.2.0 extension directly:
 
 ```bash
-gemini extensions install https://github.com/hermes-labs-ai/fidelis --ref=v0.1.0
+gemini extensions install https://github.com/hermes-labs-ai/fidelis --ref=v0.2.0
 ```
 
 The extension launches the released MCP package through `uvx` and includes the
@@ -112,21 +114,23 @@ The extension launches the released MCP package through `uvx` and includes the
 
 Linux users swap `brew install ollama` for the equivalent install from [ollama.com](https://ollama.com). [See Requirements](#requirements).
 
-Fidelis Memory 0.1.0 is also published in the
+Fidelis Memory 0.1.0 is the version currently published in the
 [official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.1.0)
-as `io.github.hermes-labs-ai/fidelis-memory`. Registry-aware clients can launch
-the same released server directly from PyPI:
+as `io.github.hermes-labs-ai/fidelis-memory`. After the 0.2.0 package and
+registry publication complete, registry-aware clients can launch the matching
+server directly from PyPI:
 
 ```bash
-uvx --from "fidelis-memory==0.1.0" fidelis mcp serve
+uvx --from "fidelis-memory==0.2.0" fidelis mcp serve
 ```
 
 This starts the MCP stdio process; run `fidelis init` first when the local
 Fidelis service and store have not already been configured. Version 0.0.94
 introduced supported Codex MCP installation and context-sensitive orientation;
 0.0.96 added the independently discoverable registry release; 0.0.97 was the
-first tagged release that carried the Gemini CLI extension manifest; and 0.1.0
-promotes the tested cross-client contract as the first minor Fidelis release.
+first tagged release that carried the Gemini CLI extension manifest; 0.1.0
+established the first cross-client product contract; and 0.2.0 packages the
+safer service startup and installation behavior described below.
 
 ## What you notice immediately
 
@@ -336,12 +340,12 @@ gemini extensions list      # fidelis, with its GEMINI.md and MCP server
 gemini extensions uninstall fidelis
 ```
 
-The extension pins `fidelis-memory==0.1.0`; `gemini extensions update fidelis`
+The extension pins `fidelis-memory==0.2.0`; `gemini extensions update fidelis`
 follows the repository's tagged releases. The first launch lets `uvx` download
 the wheel and its dependencies. Gemini CLI 0.32.1 probes `gemini mcp list`
 with a fixed 5-second timeout that ignores the manifest's 60-second `timeout`,
 so that first launch can read *Disconnected*; run
-`uvx --from fidelis-memory==0.1.0 fidelis --help` once to warm the cache,
+`uvx --from fidelis-memory==0.2.0 fidelis --help` once to warm the cache,
 after which the row reads *Connected*. If you also register Fidelis with
 `gemini mcp add`, the `settings.json` entry takes precedence over the
 extension's, so the two do not conflict.
@@ -361,38 +365,33 @@ Once Ollama and the embedding model are available, the quickstart covers the
 full init-to-first-recall path. The default retrieval path needs no memory API
 key.
 
-**Ollama is currently required to boot the service at all, including for the
-default zero-LLM retrieval path.** The BM25 + dense + RRF retrieval logic
-itself makes no LLM call, but `fidelis-server` boots through mem0's
-`Memory.from_config()`, and mem0's Ollama embedder validates its connection
-at construction time — before any query runs. We installed `fidelis-memory`
-from PyPI in a clean venv and confirmed this directly:
+**Ollama is required to load the memory store and perform retrieval, but not
+to start `fidelis-server` or answer its health check.** The server now binds
+first and loads the store only for a request that needs it. With Ollama
+unreachable, `fidelis health` remains available and reports
+`store_loaded: false`; store-backed requests return a generic `503` rather
+than crashing the process. Start Ollama and pull the embedding model before
+using retrieval or ingestion.
 
 ```bash
 python3 -m venv /tmp/fv && source /tmp/fv/bin/activate
-pip install "fidelis-memory==0.1.0"
+pip install "fidelis-memory==0.2.0"
 python3 -c 'import fidelis; print(fidelis.__version__)'
-# 0.1.0 — installs and imports fine, no Ollama needed for this step
+# 0.2.0 — installs and imports fine, no Ollama needed for this step
 
 COGITO_OLLAMA_URL=http://127.0.0.1:1 fidelis-server   # Ollama unreachable on purpose
 ```
 
 ```text
-ConnectionError: Failed to connect to Ollama. Please check that Ollama is
-downloaded, running and accessible. https://ollama.com/download
-  File ".../mem0/embeddings/ollama.py", line 30, in _ensure_model_exists
-    local_models = self.client.list()["models"]
+{"status": "ok", "count": -1, "store_loaded": false, ...}
 ```
 
-The package installs and imports cleanly without Ollama. The server process
-— and every documented path that goes through it (`fidelis health`, `fidelis
-query`, `fidelis recall-hybrid --tier zero_llm`, the MCP server, and
-`fidelis.augment`) — does not start without a reachable Ollama instance. There
-is currently no lighter-weight standalone way to exercise the zero-LLM
-retrieval path without the full Ollama + service stack. This is a real gap
-between the "zero-LLM retrieval" framing and the actual boot dependency; we
-are not fixing the Ollama boot coupling here, just documenting it honestly so
-you know what to expect before you install Ollama.
+The package installs and imports cleanly without Ollama. The MCP stdio server
+can also answer protocol initialization and tool-list requests without it.
+`fidelis query`, `fidelis recall-hybrid --tier zero_llm`, ingestion, and other
+memory-backed operations still require the full local Ollama + service stack;
+the "zero-LLM" claim concerns the retrieval path, not its local embedding
+dependency.
 
 ## Quick reference
 
@@ -447,7 +446,7 @@ After `fidelis init`:
 
 To stop: `fidelis init --uninstall`. To wipe: `rm -rf ~/.cogito ~/.fidelis`.
 
-## Known limitations (v0.1.0)
+## Known limitations (v0.2.0)
 
 - **Pre-release.** Python function names and CLI commands may change. Pin the version if you build on it.
 - **Best on macOS Sequoia / Ubuntu 24.04 LTS.** Other OSes likely work but aren't gate-tested.
@@ -476,8 +475,8 @@ fidelis is open-source under MIT and free for any use, including commercial. If 
 ## For technical users
 
 - [`docs/user-fit.md`](docs/user-fit.md) - supported users, prerequisites, and explicit non-fits
-- [`docs/releases/0.1.0.md`](docs/releases/0.1.0.md) - 0.1.0 release scope and acceptance evidence
-- [`ROADMAP.md`](ROADMAP.md) - outcome gates for 0.2.0
+- [`docs/releases/0.2.0.md`](docs/releases/0.2.0.md) - 0.2.0 release scope and release notes
+- [`ROADMAP.md`](ROADMAP.md) - outcome gates beyond 0.2.0
 - [`docs/full-reference.md`](docs/full-reference.md) - full architecture, hybrid recall tiers, local server endpoints, troubleshooting
 - [`docs/scaffold.md`](docs/scaffold.md) - Fidelis Scaffold contract + drift-detection markers
 - [`experiments/zeroLLM-FLAGSHIP-evidence/`](experiments/zeroLLM-FLAGSHIP-evidence/) - raw eval JSONs + machine-readable SUMMARY (per-qtype breakdowns, Wilson CI, F1/F1B baselines)

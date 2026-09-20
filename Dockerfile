@@ -1,6 +1,6 @@
 # Fidelis Dockerfile — runs the fidelis MCP stdio server by default.
-# Build: docker build -t fidelis:0.1.0 .
-# Run:   docker run -i fidelis:0.1.0
+# Build: docker build -t fidelis:0.2.0 .
+# Run:   docker run -i fidelis:0.2.0
 #
 # Default entrypoint: the MCP stdio server (`fidelis mcp serve`). Registry
 # inspectors (e.g. Glama) build this image and speak MCP `initialize` /
@@ -9,7 +9,7 @@
 # To run the HTTP memory server instead (needs a reachable Ollama for
 # embeddings — see docker-compose.yml or point OLLAMA_URL at your host):
 #   docker run -p 19420:19420 -v fidelis-data:/data \
-#     -e FIDELIS_ENTRYPOINT=http fidelis:0.1.0
+#     -e FIDELIS_ENTRYPOINT=http fidelis:0.2.0
 
 FROM python:3.12-slim
 
@@ -17,7 +17,7 @@ LABEL org.opencontainers.image.title="fidelis"
 LABEL org.opencontainers.image.description="Agent memory with zero-LLM retrieval and a $0-incremental QA scaffold"
 LABEL org.opencontainers.image.source="https://github.com/hermes-labs-ai/fidelis"
 LABEL org.opencontainers.image.licenses="MIT"
-LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.version="0.2.0"
 
 # System deps for chromadb + sqlite
 RUN apt-get update \

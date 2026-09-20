@@ -2,6 +2,24 @@
 
 # Unreleased
 
+## v0.2.0
+
+- Start the local HTTP service and MCP stdio surface without a reachable
+  Ollama instance. Health and protocol-discovery requests remain available;
+  memory-backed operations report a degraded/unavailable store until the local
+  embedding service is reachable.
+- Make `fidelis init` refuse existing service-label and port collisions by
+  default, preserve existing service environment settings during re-init, and
+  offer explicit port and label overrides for intentional coexistence.
+- Honor `FIDELIS_PORT` on both the HTTP server and MCP client, preventing a
+  configured non-default port from splitting the client and server.
+- Add a portable Claude plugin root that pins the released package and exposes
+  the existing read-only MCP tool surface.
+- Coordinate package, runtime, MCP/plugin manifests, citation, current install
+  instructions, container metadata, and release tests at `0.2.0`. The
+  version-specific Zenodo identifier is intentionally omitted until an archive
+  for this release exists.
+
 ## v0.1.0 — 2026-09-13
 
 - Promote Fidelis Memory from the `0.0.x` sequence to its first minor release.
