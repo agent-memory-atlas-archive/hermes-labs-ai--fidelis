@@ -49,8 +49,10 @@ The second response lists the four tools above.
 
 ## Configuration
 
-`FIDELIS_PORT` configures both the server and MCP client. `COGITO_PORT` is a
-legacy fallback.
+`FIDELIS_PORT` is supported by both the server and MCP client, but must be set
+in each process environment: the plugin `.mcp.json` affects only the MCP client;
+a separately started `fidelis-server` needs its own environment or configuration.
+`COGITO_PORT` remains a legacy fallback.
 
 ## Version binding
 
