@@ -49,9 +49,8 @@ The second response lists the four tools above.
 
 ## Configuration
 
-`FIDELIS_PORT` in the `.mcp.json` `env` block points the MCP client at a
-non-default server port. The server process reads `COGITO_PORT`; set both when
-you move off 19420.
+`FIDELIS_PORT` configures both the server and MCP client. `COGITO_PORT` is a
+legacy fallback.
 
 ## Version binding
 
