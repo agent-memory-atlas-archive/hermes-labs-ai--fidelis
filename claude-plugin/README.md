@@ -26,9 +26,9 @@ The MCP server is a thin stdio client. It reads from a local `fidelis-server`
 over HTTP on `127.0.0.1:19420` and holds no store of its own. Start one first:
 
 ```bash
-uvx --from "fidelis-memory==0.1.0" fidelis init     # install the background service
+uvx --from "fidelis-memory==0.2.0" fidelis init     # install the background service
 # or, in the foreground:
-uvx --from "fidelis-memory==0.1.0" fidelis server
+uvx --from "fidelis-memory==0.2.0" fidelis server
 ```
 
 `uvx` comes from [uv](https://docs.astral.sh/uv/). Without a running server the
@@ -42,16 +42,17 @@ printf '%s\n%s\n%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-  | uvx --from "fidelis-memory==0.1.0" fidelis mcp serve
+  | uvx --from "fidelis-memory==0.2.0" fidelis mcp serve
 ```
 
 The second response lists the four tools above.
 
 ## Configuration
 
-`FIDELIS_PORT` in the `.mcp.json` `env` block points the MCP client at a
-non-default server port. The server process reads `COGITO_PORT`; set both when
-you move off 19420.
+`FIDELIS_PORT` is supported by both the server and MCP client, but must be set
+in each process environment: the plugin `.mcp.json` affects only the MCP client;
+a separately started `fidelis-server` needs its own environment or configuration.
+`COGITO_PORT` remains a legacy fallback.
 
 ## Version binding
 

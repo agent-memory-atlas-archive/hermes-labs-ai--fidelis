@@ -6,7 +6,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOI = "https://doi.org/10.5281/zenodo.22732418"
 ORCID = "https://orcid.org/0009-0005-4896-1112"
 VOLATILE_DATE_KEYS = {"dateCreated", "dateModified", "datePublished"}
 
@@ -67,7 +66,9 @@ def test_codemeta_matches_release_metadata():
         f"https://pypi.org/project/{distribution}/{version}/"
     )
     assert codemeta["releaseNotes"] == f"{repository}/releases/tag/v{version}"
-    assert codemeta["identifier"] == DOI
+    # A Zenodo DOI is version-specific. Do not carry the prior release's DOI
+    # into a new package version before its archive has been created.
+    assert "identifier" not in codemeta
     assert codemeta["author"][0]["identifier"] == ORCID
     assert f'orcid: "{ORCID}"' in citation
     assert "applicationCategory" not in codemeta

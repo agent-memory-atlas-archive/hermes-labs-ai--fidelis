@@ -11,6 +11,7 @@ PUBLIC_SURFACES = (
     ROOT / "agents.md",
     ROOT / "docs" / "full-reference.md",
 )
+RELEASE_NOTES = ROOT / "docs" / "releases" / "0.2.0.md"
 
 
 def _package_version() -> str:
@@ -46,19 +47,33 @@ def test_python_and_citation_versions_match_package():
     assert f'version: "{version}"' in citation
 
 
-def test_readme_exposes_the_exact_official_mcp_registry_release():
-    """Bind registry discovery prose to the checked-in server manifest."""
+def test_current_release_notes_and_container_metadata_track_package_version():
+    """Bind release-facing, non-historical surfaces to the package version."""
+    version = _package_version()
+    notes = RELEASE_NOTES.read_text()
+    assert notes.startswith(f"<!-- release-version: {version} -->\n")
+    assert f"# Fidelis Memory {version} " in notes
+    assert f'fidelis-memory=={version}' in notes
+
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    compose = (ROOT / "docker-compose.yml").read_text()
+    assert f'org.opencontainers.image.version="{version}"' in dockerfile
+    assert f"image: fidelis:{version}" in compose
+
+
+def test_readme_distinguishes_current_registry_record_from_release_manifest():
+    """Do not claim an unpublished registry record just because it is prepared."""
     readme = (ROOT / "README.md").read_text()
+    normalized_readme = " ".join(readme.split())
     manifest = json.loads((ROOT / "server.json").read_text())
-    version = manifest["version"]
     name = manifest["name"]
     package = manifest["packages"][0]
     registry_path = name.replace("/", "%2F")
-    registry_url = (
+    release_registry_url = (
         "https://registry.modelcontextprotocol.io/v0.1/servers/"
-        f"{registry_path}/versions/{version}"
+        f"{registry_path}/versions/{manifest['version']}"
     )
-    assert package["version"] == version
+    assert package["version"] == manifest["version"] == _package_version()
     assert package["registryType"] == "pypi"
     assert package["runtimeHint"] == "uvx"
 
@@ -76,7 +91,10 @@ def test_readme_exposes_the_exact_official_mcp_registry_release():
         ]
     )
 
-    assert registry_url in readme
+    if release_registry_url in readme:
+        assert "currently registered" in normalized_readme
+    else:
+        assert "must be published separately after its package release" in normalized_readme
     assert documented_command in readme
 
 
