@@ -5,15 +5,10 @@
 Fidelis uses Semantic Versioning for the installable `fidelis-memory` package.
 While the major version is zero, the public API is still evolving:
 
-- `0.1.x` is the supported 0.1 product line. Patch releases contain compatible
-  fixes, documentation, packaging, and client-compatibility maintenance.
-- `0.2.0` is reserved for a user-visible capability or boundary change that
-  satisfies the outcome gates in [`ROADMAP.md`](../ROADMAP.md). Volume of work
-  alone is not a reason to increment the minor version.
-- Breaking pre-1.0 changes require a minor release, an upgrade note, and a
-  recovery path. Patch releases must not knowingly break the 0.1 contract.
-- `1.0.0` requires an explicitly stable API/configuration contract and a
-  documented compatibility window; it is not implied by adoption or time.
+- `0.3.0rc1` is the redesigned memory pre-release: six MCP tools, explicit
+  corrections and validity dates, with public install safeguards retained.
+- Breaking pre-1.0 changes require a minor version and migration notes.
+- `1.0.0` requires an explicitly stable public contract.
 
 The archived `cogito-ergo` entries in `CHANGELOG.md` describe a predecessor
 package. They do not set the current Fidelis package version.
@@ -46,14 +41,13 @@ Use this order in the GitHub release body:
 6. **Known limits:** link to the README section; never hide a non-fit.
 7. **Next:** link to the outcome-gated roadmap without presenting it as shipped.
 
-For 0.1.0 use the title `Fidelis Memory 0.1.0 — local-first memory across five
-agent clients` and the body in [`releases/0.1.0.md`](releases/0.1.0.md).
-For 0.2.0 use the title and body in [`releases/0.2.0.md`](releases/0.2.0.md).
+For this candidate use [`releases/0.3.0rc1.md`](releases/0.3.0rc1.md) and
+mark the GitHub release as a pre-release.
 
 ## Release sequence
 
 1. Merge the coordinated version PR only after repository checks, Hermes Gate,
-   and independent release rubric review pass.
+   and a bounded independent review pass.
 2. Create annotated tag `vX.Y.Z` at the exact merged commit and push the tag.
 3. Dispatch `.github/workflows/release.yml` with that existing tag. It verifies
    the tag/version match, lints, tests, builds, runs `twine check`, publishes to

@@ -1,31 +1,24 @@
 # Fidelis Memory
 
-This extension connects Gemini CLI to a Fidelis Memory server running on this
-machine. Fidelis stores the user's notes and decisions verbatim and retrieves
-them without an LLM. The tools below return the original passages, not
-summaries.
+This extension connects to the local Fidelis service. Retrieve original recorded
+text when a turn depends on earlier work, decisions, or changing facts.
 
-## When to use the tools
+- `fidelis_recall`: query relevant records; default fast mode uses no generative
+  LLM. Use `as_of` for a historical validity date and `mode: "thorough"` only when
+  broader hybrid retrieval is useful.
+- `fidelis_store`: retain a fact the user intends to keep. Read the acknowledgement:
+  stored, duplicate, rejected, and queued are different outcomes.
+- `fidelis_correct`: create a replacement linked to an existing ID. The original
+  stays in history. Do not silently overwrite a conflicting record.
+- `fidelis_get`: fetch full text and correction links for a known ID.
+- `fidelis_recent`: browse recent records or corrections.
+- `fidelis_health`: inspect availability; an unloaded or unreachable store is not
+  an empty store.
 
-- `fidelis_orient` — call first when the user refers to prior work, a past
-  decision, an earlier failure, an ongoing project, or something they "said"
-  or "decided" before, even if the turn is not phrased as a question. It
-  returns an evidence-bound orientation packet or explicitly abstains.
-- `fidelis_recall` — retrieve the passages that answer a specific question
-  about what was recorded. Quote qualifiers exactly as returned.
-- `fidelis_query` — fast vector-only lookup when a short candidate list is
-  enough.
-- `fidelis_health` — check that the local server is reachable and how many
-  memories it holds. Use it when another tool reports the server as
-  unreachable.
+Preserve qualifiers when quoting. Read temporal status: superseded records are
+history, not current evidence. Scores are ranking signals, not truth confidence.
+An empty search cannot prove that a fact was never recorded. Store no secrets.
+When memory is unavailable, report that and do not invent a remembered answer.
+Unrelated turns need no tool call. The client decides when memory is invoked.
 
-## Rules
-
-- Ground answers about prior decisions in retrieved passages. Do not
-  paraphrase a constraint or number that the retrieved text states exactly.
-- If the tools report `fidelis-server unreachable`, tell the user to start it
-  with `fidelis init` (first run) or `fidelis-server` and do not invent memory.
-- Unrelated turns do not need these tools.
-
-Requirements and the full command reference live in the repository README:
-https://github.com/hermes-labs-ai/fidelis
+Setup and reference: https://github.com/hermes-labs-ai/fidelis

@@ -2,7 +2,7 @@
   "mcpServers": {
     "fidelis": {
       "command": "uvx",
-      "args": ["--from", "fidelis-memory==0.2.0", "fidelis", "mcp", "serve"],
+      "args": ["--from", "fidelis-memory==0.3.0rc1", "fidelis", "mcp", "serve"],
       "env": {}
     }
   }

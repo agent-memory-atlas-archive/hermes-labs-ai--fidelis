@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fidelis-memory"
-version = "0.2.0"
+version = "0.3.0rc1"
 description = "Fidelis Memory: faithful agent memory with zero-LLM retrieval by default. By Hermes Labs."
 readme = "README.md"
 license = { text = "MIT" }
@@ -43,7 +43,7 @@ dependencies = [
 [project.optional-dependencies]
 ollama = []  # no extra deps — Ollama runs locally
 hybrid = ["bm25s>=0.2"]  # BM25 fusion for recall_hybrid; degrades gracefully if absent
-dev = ["pytest", "pytest-asyncio", "httpx", "ruff==0.15.22"]
+dev = ["pytest", "pytest-asyncio", "httpx", "ruff==0.15.22", "build>=1.2", "anthropic>=0.40"]
 
 [project.scripts]
 fidelis = "fidelis.cli:main"
@@ -78,3 +78,6 @@ target-version = "py310"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+markers = ["live: requires explicitly enabled local services"]
+addopts = "-m 'not live'"

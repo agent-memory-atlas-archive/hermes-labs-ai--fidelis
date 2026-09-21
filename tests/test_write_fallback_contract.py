@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import io
 import json
+
+import pytest
 from unittest.mock import MagicMock
 
 from fidelis import cli
@@ -109,7 +111,7 @@ def test_cli_degraded_write_exits_zero_with_stable_status(monkeypatch, capsys):
         },
     )
 
-    cli.cmd_add(argparse.Namespace(text=["raw", "input"]))
+    cli.cmd_add(argparse.Namespace(text=["raw", "input"], extract=True))
 
     captured = capsys.readouterr()
     assert captured.out.strip() == (
@@ -131,9 +133,52 @@ def test_cli_successful_extraction_output_is_unchanged(monkeypatch, capsys):
         },
     )
 
-    cli.cmd_add(argparse.Namespace(text=["raw", "input"]))
+    cli.cmd_add(argparse.Namespace(text=["raw", "input"], extract=True))
 
     captured = capsys.readouterr()
     assert "Added 1 memories." in captured.out
     assert "extracted fact" in captured.out
     assert captured.err == ""
+
+
+@pytest.mark.parametrize("status", ["stored", "duplicate", "rejected", "unknown"])
+def test_cli_verbatim_write_reports_actual_outcome(monkeypatch, capsys, status):
+    monkeypatch.setattr(cli, "_post", lambda *a, **kw: {"status": status, "id": "record-one", "reason": "test refusal"})
+    if status in {"rejected", "unknown"}:
+        with pytest.raises(SystemExit) as exc:
+            cli._store_verbatim("durable test fact")
+        assert exc.value.code == 1
+    else:
+        cli._store_verbatim("durable test fact")
+    output = capsys.readouterr()
+    if status == "stored":
+        assert "Stored 1 memory" in output.out
+    else:
+        assert "Stored 1 memory" not in output.out
+    if status == "duplicate":
+        assert "Duplicate" in output.out
+    if status == "rejected":
+        assert "Rejected" in output.err
+
+
+@pytest.mark.parametrize("protocol", ["2024-11-05", "2025-03-26", "2025-06-18"])
+def test_mcp_queued_relation_write_never_claims_stored(monkeypatch, protocol):
+    from fidelis import mcp_server as mcp
+
+    monkeypatch.setattr(mcp, "_negotiated_protocol", protocol)
+    monkeypatch.setattr(mcp, "_http_post", lambda *a: {
+        "status": "queued", "id": "pending-record", "reason": "store unavailable",
+    })
+    text = "Atlas now uses streaming dispatch."
+    result = mcp._tool_store({
+        "text": text,
+        "metadata": {mcp.DECLARATIONS_FIELD: [{
+            "type": "supersedes", "target_record_id": "atlas-prior",
+            "support_text": text, "declared_by": "caller",
+        }]},
+    })
+    if protocol == "2025-06-18":
+        assert result["status"] == "queued"
+    else:
+        assert "NOT yet stored" in result
+        assert "stored memory:" not in result

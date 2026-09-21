@@ -6,6 +6,11 @@ a curation LLM (default: same filter endpoint as /recall) extracts a list
 of atomic facts, and each fact is written verbatim via POST /store — no
 mem0 extraction prompt involved.
 
+When NO curation endpoint is configured, chunks are stored VERBATIM via POST
+/store (never the noop:0b /add extraction, which silently stores zero) —
+deduped by content hash in ~/.cogito/seeded_chunks.json so re-seeding an
+edited file does not duplicate its unchanged sections.
+
 Usage:
     cogito seed ~/memory/                          # seed all .md files
     cogito seed ~/memory/ ~/notes/sessions/        # multiple dirs
@@ -177,6 +182,31 @@ def _file_hash(path: Path) -> str:
     return f"{stat.st_size}:{stat.st_mtime_ns}"
 
 
+def _chunk_state_path() -> Path:
+    p = Path.home() / ".cogito" / "seeded_chunks.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _load_chunk_state() -> set[str]:
+    p = _chunk_state_path()
+    if p.exists():
+        try:
+            return set(json.loads(p.read_text()))
+        except Exception:  # noqa: silent — corrupted state file → start fresh
+            return set()
+    return set()
+
+
+def _save_chunk_state(hashes: set[str]) -> None:
+    _chunk_state_path().write_text(json.dumps(sorted(hashes), indent=2))
+
+
+def _hash_text(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.strip().encode("utf-8", "replace")).hexdigest()[:16]
+
+
 # ── HTTP ────────────────────────────────────────────────────────────────────
 
 def _store(base_url: str, text: str, timeout: int = 30) -> str:
@@ -236,6 +266,7 @@ def seed(
     """
     cfg = cfg or {}
     state = _load_state()
+    chunk_state = _load_chunk_state()
     stats = {
         "files_processed": 0,
         "files_skipped": 0,
@@ -244,15 +275,19 @@ def seed(
         "errors": 0,
     }
 
-    # Curation endpoint
+    # Curation endpoint. Without one, store chunks VERBATIM via /store — never fall
+    # back to /add, whose extraction LLM is noop:0b and silently stores zero facts
+    # (the same silent-loss class fixed in cmd_add and replay_queue). Verbatim is the
+    # product's fidelity guarantee: a memory file stays durable even with no LLM up.
+    verbatim_fallback = False
     if not use_add:
         endpoint, token, model = _resolve_curation_endpoint(cfg)
         timeout = cfg.get("filter_timeout_ms", 15000) / 1000
         if endpoint:
             print(f"[fidelis seed] Curation model: {model} @ {endpoint}")
         else:
-            print("[fidelis seed] No curation endpoint — falling back to /add (mem0 extraction)")
-            use_add = True
+            print("[fidelis seed] No curation endpoint — storing chunks verbatim via /store (no extraction)")
+            verbatim_fallback = True
 
     # Collect files
     all_files: list[Path] = []
@@ -277,7 +312,12 @@ def seed(
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
 
-    mode = "/add (mem0 extraction)" if use_add else "/store (agent-curated, verbatim)"
+    if use_add:
+        mode = "/add (mem0 extraction)"
+    elif verbatim_fallback:
+        mode = "/store (verbatim chunks, no LLM)"
+    else:
+        mode = "/store (agent-curated, verbatim)"
     print(f"[cogito seed] {len(all_files)} file(s) — write path: {mode}\n")
 
     for path in all_files:
@@ -321,6 +361,33 @@ def seed(
                     print(f"      [!] chunk {i}: {e}", file=sys.stderr)
                     file_errors += 1
                     stats["errors"] += 1
+            elif verbatim_fallback:
+                # No LLM available: store the chunk verbatim. Dedup by content hash so
+                # re-seeding an edited file (the --force auto-seed hook) only writes
+                # genuinely-new chunks instead of duplicating unchanged sections —
+                # /store does not dedup server-side (safe_add mints a fresh uuid each call).
+                chash = _hash_text(chunk)
+                if chash in chunk_state:
+                    if verbose:
+                        print(f"      [{i}/{len(chunks)}] (chunk already stored, skip)")
+                    continue
+                if dry_run:
+                    print(f"      [{i}/{len(chunks)}] DRY verbatim /store: {chunk[:80].replace(chr(10),' ')!r}")
+                    stats["facts_written"] += 1
+                    continue
+                try:
+                    _store(base_url, chunk)
+                    chunk_state.add(chash)
+                    file_facts += 1
+                    stats["facts_written"] += 1
+                    if verbose:
+                        print(f"      + {chunk[:90]!r}")
+                    if delay_ms:
+                        time.sleep(delay_ms / 1000)
+                except Exception as e:
+                    print(f"      [!] chunk {i}: {e}", file=sys.stderr)
+                    file_errors += 1
+                    stats["errors"] += 1
             else:
                 # Preferred: LLM curates → /store verbatim
                 facts = _curate(chunk, endpoint, token, model, timeout)  # type: ignore[possibly-undefined]
@@ -357,6 +424,7 @@ def seed(
 
     if not dry_run:
         _save_state(state)
+        _save_chunk_state(chunk_state)
         try:
             count_after = _check_server(base_url)
             print(f"\n[cogito seed] Done. {count_after} memories in store.")

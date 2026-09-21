@@ -58,10 +58,7 @@ def test_mcp_command_pins_the_released_distribution_exactly():
 def test_mcp_command_matches_the_registry_manifest():
     """server.json is the MCP Registry contract; the plugin must not diverge.
 
-    The two spell the version differently on purpose: the registry carries it
-    in `packages[].version` and leaves `--from` bare, while a host reading
-    `.mcp.json` gets a literal argv and needs the pin inlined. Same resolved
-    command either way, so both halves are checked against one source.
+    Both manifests pin the same pre-release explicitly in their runtime arguments.
     """
     package = json.loads((ROOT / "server.json").read_text())["packages"][0]
     entry = json.loads(MCP_CONFIG.read_text())["mcpServers"]["fidelis"]
@@ -72,7 +69,7 @@ def test_mcp_command_matches_the_registry_manifest():
     assert package["transport"]["type"] == "stdio"
 
     runtime_args = [(a["name"], a["value"]) for a in package["runtimeArguments"]]
-    assert runtime_args == [("--from", DISTRIBUTION)]
+    assert runtime_args == [("--from", f"{DISTRIBUTION}=={package['version']}")]
     assert entry["args"][:2] == ["--from", f"{DISTRIBUTION}=={package['version']}"]
 
     assert [a["value"] for a in package["packageArguments"]] == entry["args"][2:]
@@ -90,14 +87,17 @@ def test_skill_declares_the_tools_the_mcp_connection_provides():
     front_matter = text.split("---\n", 2)[1]
     assert re.search(r"^name:\s*fidelis-memory\s*$", front_matter, re.MULTILINE)
     assert re.search(r"^description:\s*\S", front_matter, re.MULTILINE)
-    for tool in ("fidelis_orient", "fidelis_recall", "fidelis_query", "fidelis_health"):
+    for tool in ("fidelis_recall", "fidelis_store", "fidelis_correct", "fidelis_get", "fidelis_recent", "fidelis_health"):
         assert tool in text, tool
 
 
-def test_skill_does_not_promise_a_write_tool_over_mcp():
-    """The MCP surface is read-only; only the HTTP API writes."""
+def test_skill_matches_six_tool_memory_surface():
     from fidelis.mcp_server import TOOLS
 
     names = {tool["name"] for tool in TOOLS}
-    assert names == {"fidelis_orient", "fidelis_recall", "fidelis_query", "fidelis_health"}
-    assert not any("store" in name or "add" in name for name in names)
+    assert names == {
+        "fidelis_recall", "fidelis_store", "fidelis_correct",
+        "fidelis_get", "fidelis_recent", "fidelis_health",
+    }
+    mentioned = set(re.findall(r"`(fidelis_[a-z_]+)`", SKILL.read_text()))
+    assert mentioned == names

@@ -1,0 +1,246 @@
+{
+  "schema": "fidelis.default-retrieval-eval/v1",
+  "version": "0.3.0rc1",
+  "runner_sha256": "5187fdcb2b97a57f48f8e7fe98135e2cf1bcd843ac6c8537e9fcfaff29c6383c",
+  "python": "3.11.15",
+  "platform": "macOS-15.7.3-arm64-arm-64bit",
+  "started_at": "2026-09-21T16:34:48.923850+00:00",
+  "dataset": {
+    "source": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned",
+    "file": "longmemeval_s_cleaned.json",
+    "sha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+    "total": 500,
+    "eligible": 470,
+    "selection": "question_id does not contain '_abs'; original order"
+  },
+  "source_sha256": {
+    "__init__.py": "8b29a335391b7a940a891e2cf8bbcc377ac4432b9af75ba78297be60d73f9b06",
+    "augment.py": "99b5594d237ca97e101ee8f41e143df5fc58a2af520eadef058861e54746267a",
+    "browse.py": "402625c10b48fc768852de298d1b72c9a422969ea7f6787ccf5e17f733da4520",
+    "calibrate.py": "08ad8f0019819be689cd436fff6f6e0e9be07243ee61f44395df849b3f12e59c",
+    "cli.py": "42081dec84a64511ecfcd09ebf3f4a848884a6b4a518fe5c11200aeff1539376",
+    "codex_history.py": "a3248ec8cb2d8abe7a27aaa5dcd9b91a14eaa17a079e206abb2f68076aa48c7b",
+    "cogito_hermeneutics.py": "987679d1308bf5b9826bd42600babb5c5f5a5b88bf8f659dfc1a33eae5244a91",
+    "config.py": "d7ecec468341002135d95310a347518ad5aec64b302d7e3c75ed2c6906756f07",
+    "context.py": "fe1a3d88f235db9bf835bedd36827e43b49b405a651c9a9bd7b3f53529efb3a3",
+    "degrade.py": "8117dce9571b6afb7c65236061964d5498c78de91300c9b884ea75c96aee3448",
+    "evidence_status.py": "b568d76d4255ba16ec316fca97c8e912ecfb1ec554d16cb69814fc9da97639a6",
+    "ingest_claude_sessions.py": "675b9d77b33629059a5dd424cef8132b91703c3856bbd8705149ba5efac284bb",
+    "ingest_codex_sessions.py": "bcaf6c387b074f5c443fb61b037208b17b30b3419ba7c8cce8e930b816f7ce29",
+    "init_cmd.py": "c2b16843aeb8120123bc8372a7e21d3373c6d29dbd88b7314d3c2eb692c60ef9",
+    "inquiry.py": "6e574f675501ab224eee34018776577138ebe16c1b51c23de26d8598b66384b5",
+    "lpci.py": "7426e08a52352802e4a947b07c8e229ff4a16f9f0e0a7d773666891b872a7895",
+    "mcp_cmd.py": "2442f0dabe6b8cb9bd339f9c2b283cd2a11f4a25de548ca55a4879ed209ccebf",
+    "mcp_server.py": "053168655aaea621ffda3aaee31b18478727ab9d1088281de33e1052fa90ef89",
+    "recall.py": "26373cd908f803a885aa01fead75053de33b20187d83447e49f3332f39f1d05c",
+    "recall_b.py": "ce723cdf6a1b1add2410bfe01070fa18aae383428dbb3ef377f279e6ad2b6526",
+    "recall_hybrid.py": "ae0ba3e212b44c549d91918cb1e97f9d597cc91110ba63b8a3f223c02e7523d5",
+    "recall_recent.py": "ee3c4421d74b3d6278b9417de25e040ff379df1d6ae9493e11debe95964a8c0e",
+    "recall_sessions.py": "6adf738ff95e45611d46012c51a3585d8a001ad0819368a4131ed3852b8a5903",
+    "relation_envelope.py": "49cf6d8b72d890148e5560d4afe66ec3a886cb4ff34ab16dea0693106b635d78",
+    "retrieval_telemetry.py": "e69845deecb8da1875a93550962b3a5b09471c2c85840a2e535a4ce6a80148a2",
+    "retrieval_trace.py": "063d4af97f8b788d1feca50991bb62566957d0eb17af176384c6beab79254e5a",
+    "scaffold/__init__.py": "4e5ceaa9b78e6fb43162efce0dd15a6ca5b5cdc2321912fd2cca3f4b8481927e",
+    "scaffold/_core.py": "5c019aa925f7433c8d4aeac78bd20ea11dabe770366a9451e56a2a1a2e399014",
+    "scaffold/preflight.py": "ea2478b1b6db7246ec88305c8143210dbee4dc159e839abb28ab243353bdee4b",
+    "scaffold_server.py": "5b4595109f7023044633e4408ba29be3e0a469dbc02ff9bed351af59830652ae",
+    "seed.py": "b5715d1a6039fe1cc7c2b63f7efde6e6ecf663a45c7fb70978c3cda2ae35ae04",
+    "server.py": "ecf858b0d4e5f46b445bc5381f003e788131c468601311c4325898e62690fc2f",
+    "session_reference.py": "0ff4127a833889165f2e78eee58ab529086b0117d9f9dafec3b3613fe7c3e819",
+    "sessions_cmd.py": "e66b1d136ffd507c69e6eb16e526505d7f83a183926758b5d799461b990c0348",
+    "snapshot.py": "e729b1c4a40c0fa411f27a0a073b480368539dbdfcdd0e83bced5a291a99574e",
+    "supersession.py": "40ebe491f74c87a4cc3ce1177fcccc03a226956f8866b7a76d3e9ef8d5bd660f",
+    "telemetry.py": "42df45ce8ccfeb41b7e3bbe1609550687a9a5b219b5409ede89298932178a4a5",
+    "temporal.py": "31d476b2b083171f74ba17ae8c5bba210820154bfd8da36dff5f459eab6843e2",
+    "temporal_index.py": "8e3fb73554c28a64859b1f344a61fd024e0aa3da22b9a731fc19e1f5a258c6bc",
+    "temporal_recall.py": "b8b4d1502c77e5c0d7cf1331cbeefd4dd7fdaad5c0fbec28a841736f64762891",
+    "watch_cmd.py": "fb19f705c9bc84d58fd66c184fc3a7211ed321ca76d81be5c43e6d7e39b7b9a7",
+    "write_gate.py": "3079768e5d9533e731c320efbe19d18b564fb3d7d8d4affd4baab26822db020a"
+  },
+  "source_tree_sha256": "6b1ee344c11e647b48c8b82563ad582ad35b9a96efa5faefd4f1fa9caa2fd6a8",
+  "git_head": "23286aadf2bd98527d9c951c558d8f4fbdc18067",
+  "model": {
+    "name": "nomic-embed-text:latest",
+    "digest": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "nomic-bert",
+      "families": [
+        "nomic-bert"
+      ],
+      "parameter_size": "137M",
+      "quantization_level": "F16",
+      "context_length": 2048,
+      "embedding_length": 768
+    }
+  },
+  "dependencies": {
+    "mem0ai": "2.1.0",
+    "chromadb": "1.5.9",
+    "ollama": "0.6.2",
+    "numpy": "2.4.6",
+    "pydantic": "2.13.5"
+  },
+  "protocol": {
+    "route": "POST /query",
+    "mode": "fast",
+    "request": "{\"text\": question}; default limit=5",
+    "corpus": "one full role-prefixed session per record; no dates or gold labels in text",
+    "indexing": "direct mem0 Chroma insertion with candidate _embed_bounded; write gate not evaluated",
+    "embedding_cache": "content + model digest + embedder and bounded function source hashes; no retrieval output cache",
+    "llm_calls": 0,
+    "temporal_metadata": "absent; legacy-compatible unversioned corpus",
+    "comparison": "not directly comparable with historical chunked hybrid pipeline or QA accuracy"
+  },
+  "rows": [
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "gold_session_ids": [
+        "answer_280352e9"
+      ],
+      "ranked_session_ids": [
+        "sharegpt_QZMeA7V_17",
+        "ultrachat_214101",
+        "sharegpt_Jcy1CVN_0",
+        "sharegpt_jVow2vn_0",
+        "ultrachat_530213"
+      ],
+      "hit_at_1": 0,
+      "hit_at_5": 0,
+      "recall_at_5": 0.0,
+      "all_answer_sessions_at_5": 0,
+      "query_seconds": 0.012976416968740523,
+      "method": "default-query",
+      "scores": [
+        0.481,
+        0.466,
+        0.462,
+        0.461,
+        0.455
+      ]
+    },
+    {
+      "question_id": "118b2229",
+      "question_type": "single-session-user",
+      "gold_session_ids": [
+        "answer_40a90d51"
+      ],
+      "ranked_session_ids": [
+        "b5f561f5_2",
+        "004edb32",
+        "d600c646",
+        "db50c0f6",
+        "db73b7e4_4"
+      ],
+      "hit_at_1": 0,
+      "hit_at_5": 0,
+      "recall_at_5": 0.0,
+      "all_answer_sessions_at_5": 0,
+      "query_seconds": 0.013430292019620538,
+      "method": "default-query",
+      "scores": [
+        0.463,
+        0.46,
+        0.458,
+        0.457,
+        0.456
+      ]
+    },
+    {
+      "question_id": "51a45a95",
+      "question_type": "single-session-user",
+      "gold_session_ids": [
+        "answer_d61669c7"
+      ],
+      "ranked_session_ids": [
+        "answer_d61669c7",
+        "sharegpt_3vxz2Zr_0",
+        "sharegpt_apWLb2c_0",
+        "dfe646a7_1",
+        "sharegpt_9MbC1u2_0"
+      ],
+      "hit_at_1": 1,
+      "hit_at_5": 1,
+      "recall_at_5": 1.0,
+      "all_answer_sessions_at_5": 1,
+      "query_seconds": 0.0117624580161646,
+      "method": "default-query",
+      "scores": [
+        0.516,
+        0.496,
+        0.485,
+        0.484,
+        0.481
+      ]
+    },
+    {
+      "question_id": "58bf7951",
+      "question_type": "single-session-user",
+      "gold_session_ids": [
+        "answer_355c48bb"
+      ],
+      "ranked_session_ids": [
+        "answer_355c48bb",
+        "ultrachat_71618",
+        "sharegpt_53zErgw_0",
+        "ultrachat_304942",
+        "1587bd78_1"
+      ],
+      "hit_at_1": 1,
+      "hit_at_5": 1,
+      "recall_at_5": 1.0,
+      "all_answer_sessions_at_5": 1,
+      "query_seconds": 0.010222124983556569,
+      "method": "default-query",
+      "scores": [
+        0.496,
+        0.478,
+        0.475,
+        0.47,
+        0.46
+      ]
+    },
+    {
+      "question_id": "1e043500",
+      "question_type": "single-session-user",
+      "gold_session_ids": [
+        "answer_3e012175"
+      ],
+      "ranked_session_ids": [
+        "sharegpt_Ij8JbdT_0",
+        "8020d945_2",
+        "answer_3e012175",
+        "sharegpt_85Y0l0J_365",
+        "2d0d0004"
+      ],
+      "hit_at_1": 0,
+      "hit_at_5": 1,
+      "recall_at_5": 1.0,
+      "all_answer_sessions_at_5": 1,
+      "query_seconds": 0.012568125035613775,
+      "method": "default-query",
+      "scores": [
+        0.51,
+        0.508,
+        0.507,
+        0.499,
+        0.497
+      ]
+    }
+  ],
+  "questions_evaluated": 5,
+  "errors": 0,
+  "metrics": {
+    "hit_at_1": 0.4,
+    "hit_at_5": 0.6,
+    "recall_at_5": 0.6,
+    "all_answer_sessions_at_5": 0.6
+  },
+  "complete": true,
+  "query_seconds_median": 0.012568125035613775,
+  "finished_at": "2026-09-21T16:35:08.154749+00:00",
+  "source_unchanged_during_run": true,
+  "valid": true
+}

@@ -120,7 +120,7 @@ def test_repeated_pings_are_each_answered_and_keep_the_session_alive():
     for r in responses[1:5]:
         assert r["result"] == {}
     assert [t["name"] for t in responses[5]["result"]["tools"]] == [
-        "fidelis_recall", "fidelis_query", "fidelis_health", "fidelis_orient",
+        "fidelis_recall", "fidelis_store", "fidelis_correct", "fidelis_get", "fidelis_recent", "fidelis_health",
     ]
 
 
@@ -137,7 +137,7 @@ def test_initialize_and_tools_list_are_unchanged():
         "capabilities": {"tools": {}},
         "serverInfo": {"name": "fidelis", "version": __version__},
     }
-    assert len(responses[1]["result"]["tools"]) == 4
+    assert len(responses[1]["result"]["tools"]) == 6
 
 
 @pytest.mark.parametrize("method", [
@@ -152,3 +152,29 @@ def test_other_unknown_methods_still_report_method_not_found(method):
 
 def test_notifications_still_get_no_response():
     assert _handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+
+
+@pytest.mark.parametrize("protocol", ["2024-11-05", "2025-03-26", "2025-06-18"])
+def test_batches_only_for_negotiated_march_protocol(protocol):
+    initialize = {**INITIALIZE, "params": {"protocolVersion": protocol}}
+    responses = _converse([
+        initialize,
+        [{"jsonrpc": "2.0", "id": 7, "method": "ping"}],
+        {"jsonrpc": "2.0", "id": 8, "method": "ping"},
+    ])
+    assert responses[0]["result"]["protocolVersion"] == protocol
+    if protocol == "2025-03-26":
+        assert responses[1] == [{"jsonrpc": "2.0", "id": 7, "result": {}}]
+    else:
+        assert responses[1]["error"]["code"] == -32600
+    assert responses[2] == {"jsonrpc": "2.0", "id": 8, "result": {}}
+
+
+@pytest.mark.parametrize("malformed", [None, 1, "bad request", True])
+def test_non_object_input_does_not_kill_mcp_session(malformed):
+    responses = _converse([
+        malformed,
+        {"jsonrpc": "2.0", "id": 8, "method": "ping"},
+    ])
+    assert responses[0]["error"]["code"] == -32600
+    assert responses[1] == {"jsonrpc": "2.0", "id": 8, "result": {}}

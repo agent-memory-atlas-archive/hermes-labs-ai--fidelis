@@ -3,15 +3,19 @@ fidelis CLI
 
   fidelis init                       install + start service (launchd/systemd)
   fidelis watch  ~/notes             auto-ingest a directory
-  fidelis mcp install --client codex wire Codex MCP integration
-  fidelis mcp install --client copilot wire GitHub Copilot CLI MCP integration
-  fidelis mcp install --client gemini wire Gemini CLI MCP integration
-  fidelis mcp install --client openclaw wire OpenClaw MCP integration
-  fidelis recall "query"             two-stage recall via running server
+  fidelis mcp install                wire Claude Code MCP integration
+  fidelis recall "query"             Cogito Hermeneutics explicit recall
+  fidelis orient "message"           automatic memory-routing decision + recall
+  fidelis inquire "request"          bounded evidence inquiry (opt-in)
+  fidelis route-turn "message"       host orientation-first route (same /orient)
+  fidelis recall-legacy "query"      legacy two-stage recall for comparison
   fidelis query  "query"             simple vector query (no filter)
-  fidelis add    "text"              add a memory
+  fidelis store  "text"              store text verbatim (preferred write path)
+  fidelis add    "text"              add a memory (verbatim; --extract for legacy path)
   fidelis seed   ~/memory/ ~/notes/  bulk-seed from markdown files
   fidelis health                     check server health
+  fidelis capabilities               inspect deterministic runtime capabilities
+  fidelis relation-backfill-dry-run records.json
   fidelis server                     start the server (alias for fidelis-server)
 
 All commands talk to the HTTP server. After `fidelis init` the service runs
@@ -26,6 +30,8 @@ import sys
 import urllib.error
 import urllib.request
 import os
+
+from fidelis import __version__
 
 
 def _base_url() -> str:
@@ -85,6 +91,23 @@ def cmd_recall(args):
     payload = {
         "text": args.query,
         "limit": args.limit,
+        "automatic": False,
+        "session_id": getattr(args, "session_id", f"cli-process:{os.getpid()}"),
+        "turn_id": getattr(args, "turn_id", "unavailable"),
+    }
+    if args.since:
+        payload["since"] = args.since
+    result = _post("/orient", payload)
+    if args.raw:
+        print(json.dumps(result, indent=2))
+        return
+    _print_memories(result.get("memories", []), result.get("method", ""))
+
+
+def cmd_recall_legacy(args):
+    payload = {
+        "text": args.query,
+        "limit": args.limit,
         "threshold": args.threshold,
     }
     if args.since:
@@ -94,6 +117,73 @@ def cmd_recall(args):
         print(json.dumps(result, indent=2))
         return
     _print_memories(result.get("memories", []), result.get("method", ""))
+
+
+def cmd_orient(args):
+    result = _post(
+        "/orient",
+        {
+            "text": args.message,
+            "limit": args.limit,
+            "automatic": True,
+            "recent_turns": args.recent_turn or [],
+            "session_id": getattr(args, "session_id", f"cli-process:{os.getpid()}"),
+            "turn_id": getattr(args, "turn_id", "unavailable"),
+        },
+    )
+    if args.raw:
+        print(json.dumps(result, indent=2))
+        return
+    retrieval_status = (
+        result.get("retrieval_status")
+        or result.get("legacy_retrieval_status")
+        or result.get("status")
+    )
+    if retrieval_status == "not_needed":
+        print("Memory retrieval not needed.")
+        return
+    _print_memories(result.get("memories", []), result.get("method", ""))
+
+
+def cmd_inquire(args):
+    policy: dict[str, object] = {}
+    if args.max_passes is not None:
+        policy["maximum_passes"] = args.max_passes
+    if args.max_records is not None:
+        policy["maximum_selected_records"] = args.max_records
+    overrides: dict[str, object] = {}
+    if args.operation is not None:
+        overrides["operation"] = args.operation
+    result = _post(
+        "/inquire",
+        {
+            "query": args.query,
+            "policy": policy or "auto",
+            "include_trace": bool(args.trace),
+            "overrides": overrides,
+        },
+    )
+    if args.raw:
+        print(json.dumps(result, indent=2))
+        return
+    if "error" in result:
+        print(f"Error: {result['error']}", file=sys.stderr)
+        raise SystemExit(1)
+    print(
+        f"disposition: {result.get('disposition', 'unknown')}  |  "
+        f"stop: {result.get('stop_reason', 'unknown')}"
+    )
+    records = result.get("records", [])
+    if not records:
+        print("No evidence records selected.")
+    for index, record in enumerate(records, 1):
+        print(f"\n[{index}] {record.get('record_id', 'unknown-record')}")
+        print(f"    {record.get('text', '')}")
+        if record.get("source_pointer"):
+            print(f"    source: {record['source_pointer']}")
+    missing = result.get("missing_roles", [])
+    if missing:
+        print(f"\nmissing roles: {', '.join(str(role) for role in missing)}")
 
 
 def cmd_recall_hybrid(args):
@@ -118,9 +208,48 @@ def cmd_query(args):
     _print_memories(result.get("memories", []))
 
 
+def _store_verbatim(text: str) -> None:
+    # Verbatim store — no extraction LLM, the agent's text IS the memory.
+    # Matches the MCP fidelis_store tool and the server's documented preferred write path.
+    result = _post("/store", {"text": text})
+    if "error" in result:
+        print(f"Error: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+    if result.get("status") == "queued":
+        print(f"Queued (deferred write, server dependency down): {result.get('id', '?')}")
+        if result.get("reason"):
+            print(f"  reason: {result['reason']}", file=sys.stderr)
+        return
+    status = result.get("status")
+    if status == "duplicate":
+        print(f"Duplicate: already stored as {result.get('id', '?')}")
+        return
+    if status == "rejected":
+        print(f"Rejected: {result.get('reason', 'write refused')}", file=sys.stderr)
+        sys.exit(1)
+    if status != "stored":
+        print("Write outcome unknown; recall before retrying.", file=sys.stderr)
+        sys.exit(1)
+    print(f"Stored 1 memory: {result.get('id', '?')}")
+
+
+def cmd_store(args):
+    _store_verbatim(" ".join(args.text))
+
+
 def cmd_add(args):
     text = " ".join(args.text)
+    if not args.extract:
+        # Default: verbatim — same path as `fidelis store`, kept for muscle memory.
+        _store_verbatim(text)
+        return
+    # Legacy extraction path: mem0 summarises raw text via the extraction LLM.
+    # Off by default because fidelis's fidelity guarantee is verbatim storage;
+    # only useful when cfg llm_model is a real (non-noop) extraction model.
     result = _post("/add", {"text": text})
+    if "error" in result:
+        print(f"Error: {result['error']}", file=sys.stderr)
+        sys.exit(1)
     if result.get("degraded"):
         print(
             f"status={result.get('status', 'stored')} "
@@ -146,6 +275,53 @@ def cmd_health(args):
     calibrated = "yes" if result.get("calibrated") else "no"
     has_snapshot = "yes" if result.get("snapshot") else "no"
     print(f"status: {status}  |  memories: {count}  |  version: {version}  |  calibrated: {calibrated}  |  snapshot: {has_snapshot}")
+
+
+def cmd_capabilities(args):
+    print(json.dumps(_get("/capabilities"), indent=2, sort_keys=True))
+
+
+def cmd_relation_backfill_dry_run(args):
+    from pathlib import Path
+
+    from fidelis.relation_envelope import dry_run_backfill_relation_envelopes
+
+    try:
+        payload = json.loads(Path(args.input_json).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Error: cannot read input JSON: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    records = payload.get("records") if isinstance(payload, dict) else payload
+    if not isinstance(records, list) or any(not isinstance(item, dict) for item in records):
+        print("Error: input must be a JSON list or an object with a records list", file=sys.stderr)
+        raise SystemExit(2)
+    session_sidecar = (
+        payload.get("session_sidecar")
+        if isinstance(payload, dict)
+        else None
+    )
+    snapshot_hashes = (
+        payload.get("snapshot_hashes")
+        if isinstance(payload, dict)
+        else None
+    )
+    if session_sidecar is not None and not isinstance(session_sidecar, dict):
+        print("Error: session_sidecar must be an object", file=sys.stderr)
+        raise SystemExit(2)
+    if snapshot_hashes is not None and not isinstance(snapshot_hashes, dict):
+        print("Error: snapshot_hashes must be an object", file=sys.stderr)
+        raise SystemExit(2)
+    print(
+        json.dumps(
+            dry_run_backfill_relation_envelopes(
+                records,
+                session_sidecar=session_sidecar,
+                snapshot_hashes=snapshot_hashes,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 def cmd_seed(args):
@@ -216,29 +392,92 @@ def cmd_server(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="fidelis",
-        description="fidelis — agent memory with zero-LLM retrieval and a $0-incremental QA scaffold",
+        description=(
+            "Fidelis — local agent memory with deterministic automatic "
+            "orientation and provenance-preserving recall"
+        ),
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # recall
-    p_recall = sub.add_parser("recall", help="Two-stage recall with LLM filter")
+    # recall — integrated explicit path
+    p_recall = sub.add_parser("recall", help="Explicit recall through Cogito Hermeneutics")
     p_recall.add_argument("query")
     p_recall.add_argument("--limit", type=int, default=50)
     p_recall.add_argument("--threshold", type=float, default=400.0)
     p_recall.add_argument("--since", help="ISO 8601 date string to filter memories created after this date (e.g., 2026-04-01)")
     p_recall.add_argument("--raw", action="store_true")
+    p_recall.add_argument("--session-id", default=f"cli-process:{os.getpid()}")
+    p_recall.add_argument("--turn-id", default="unavailable")
     p_recall.set_defaults(func=cmd_recall)
+
+    # orient — integrated automatic decision path
+    p_orient = sub.add_parser("orient", help="Automatic memory-routing decision + recall")
+    p_orient.add_argument("message")
+    p_orient.add_argument("--limit", type=int, default=5)
+    p_orient.add_argument("--recent-turn", action="append", default=[])
+    p_orient.add_argument("--raw", action="store_true")
+    p_orient.add_argument("--session-id", default=f"cli-process:{os.getpid()}")
+    p_orient.add_argument("--turn-id", default="unavailable")
+    p_orient.set_defaults(func=cmd_orient)
+
+    p_inquire = sub.add_parser(
+        "inquire",
+        help=(
+            "Run opt-in bounded evidence inquiry; returns evidence and "
+            "missingness, never a generated answer"
+        ),
+    )
+    p_inquire.add_argument("query")
+    p_inquire.add_argument(
+        "--operation",
+        choices=["verify_claim", "evaluate_decision", "trace_evolution"],
+        help="Explicit closed inquiry operation when deterministic parsing is insufficient",
+    )
+    p_inquire.add_argument("--max-passes", type=int, choices=range(1, 4))
+    p_inquire.add_argument("--max-records", type=int, choices=range(1, 13))
+    p_inquire.add_argument(
+        "--trace",
+        action="store_true",
+        help="Include the bounded pass and ranking trace",
+    )
+    p_inquire.add_argument("--raw", action="store_true")
+    p_inquire.set_defaults(func=cmd_inquire)
+
+    p_route = sub.add_parser(
+        "route-turn",
+        help=(
+            "Host orientation-first route for past-work/decision/history turns; "
+            "the host remains responsible for invocation"
+        ),
+    )
+    p_route.add_argument("message")
+    p_route.add_argument("--limit", type=int, default=5)
+    p_route.add_argument("--recent-turn", action="append", default=[])
+    p_route.add_argument("--raw", action="store_true")
+    p_route.add_argument("--session-id", default=f"cli-process:{os.getpid()}")
+    p_route.add_argument("--turn-id", default="unavailable")
+    p_route.set_defaults(func=cmd_orient)
+
+    # legacy recall retained for rollback and same-case comparisons
+    p_recall_legacy = sub.add_parser("recall-legacy", help="Legacy two-stage recall")
+    p_recall_legacy.add_argument("query")
+    p_recall_legacy.add_argument("--limit", type=int, default=50)
+    p_recall_legacy.add_argument("--threshold", type=float, default=400.0)
+    p_recall_legacy.add_argument("--since")
+    p_recall_legacy.add_argument("--raw", action="store_true")
+    p_recall_legacy.set_defaults(func=cmd_recall_legacy)
 
     # recall-hybrid (BM25 + dense + RRF + tiered LLM)
     p_hybrid = sub.add_parser(
         "recall-hybrid",
-        help="Hybrid BM25+dense+RRF recall. Zero-LLM default (83.2%% R@1); opt-in LLM tiers for benchmark replication.",
+        help="Hybrid BM25+dense+RRF recall with a local zero-LLM default.",
     )
     p_hybrid.add_argument("query")
     p_hybrid.add_argument("--limit", type=int, default=50)
     p_hybrid.add_argument(
         "--tier", choices=["zero_llm", "filter", "flagship"], default="zero_llm",
-        help="Retrieval tier: zero_llm (default, 83.2%% R@1, $0) | filter (benchmark-tuned) | flagship",
+        help="Retrieval tier: zero_llm (default) | filter (experimental) | flagship (experimental)",
     )
     p_hybrid.add_argument("--top-k", type=int, default=5, help="Candidates shown to reranker")
     p_hybrid.add_argument("--raw", action="store_true")
@@ -251,14 +490,39 @@ def main():
     p_query.add_argument("--raw", action="store_true")
     p_query.set_defaults(func=cmd_query)
 
+    # store — explicit verbatim write (the server's preferred write path)
+    p_store = sub.add_parser("store", help="Store text verbatim (no extraction LLM)")
+    p_store.add_argument("text", nargs="+")
+    p_store.set_defaults(func=cmd_store)
+
     # add
-    p_add = sub.add_parser("add", help="Add a memory")
+    p_add = sub.add_parser("add", help="Add a memory (verbatim store by default)")
     p_add.add_argument("text", nargs="+")
+    p_add.add_argument(
+        "--extract", action="store_true",
+        help="Summarise text into facts via the mem0 extraction LLM (legacy /add path)",
+    )
     p_add.set_defaults(func=cmd_add)
 
     # health
     p_health = sub.add_parser("health", help="Check server health")
     p_health.set_defaults(func=cmd_health)
+
+    p_capabilities = sub.add_parser(
+        "capabilities",
+        help="Show deterministic build, feature, schema, and invocation state",
+    )
+    p_capabilities.set_defaults(func=cmd_capabilities)
+
+    p_backfill = sub.add_parser(
+        "relation-backfill-dry-run",
+        help=(
+            "Classify deterministic legacy provenance/relation coverage from "
+            "JSON; never writes"
+        ),
+    )
+    p_backfill.add_argument("input_json")
+    p_backfill.set_defaults(func=cmd_relation_backfill_dry_run)
 
     # seed
     p_seed = sub.add_parser("seed", help="Bulk-seed store from markdown/text files")
@@ -297,6 +561,11 @@ def main():
     )
     p_init.add_argument("--uninstall", action="store_true",
                         help="Stop service + remove the unit/plist")
+    p_init.add_argument("--port", type=int)
+    p_init.add_argument("--label")
+    p_init.add_argument("--force", action="store_true")
+    p_init.add_argument("--dry-run", action="store_true")
+    p_init.add_argument("--migrate", action="store_true")
     p_init.set_defaults(func=lambda a: sys.exit(_cmd_init(a)))
 
     # watch — auto-ingest a directory
@@ -375,10 +644,35 @@ def _cmd_mcp_uninstall(args):
     return cmd_mcp_uninstall(args)
 
 
-def _cmd_mcp_serve(args):
-    from fidelis.mcp_server import main as mcp_main
-    return mcp_main()
+def _cmd_sessions_ingest(args):
+    from fidelis.sessions_cmd import cmd_ingest
+    return cmd_ingest(args)
+
+
+def _cmd_sessions_search(args):
+    from fidelis.sessions_cmd import cmd_search
+    return cmd_search(args)
+
+
+def _cmd_sessions_list(args):
+    from fidelis.sessions_cmd import cmd_list
+    return cmd_list(args)
+
+
+def _cmd_sessions_purge(args):
+    from fidelis.sessions_cmd import cmd_purge
+    return cmd_purge(args)
+
+
+def _cmd_sessions_stats(args):
+    from fidelis.sessions_cmd import cmd_stats
+    return cmd_stats(args)
 
 
 if __name__ == "__main__":
     main()
+
+
+def _cmd_mcp_serve(args):
+    from fidelis.mcp_server import main
+    return main()

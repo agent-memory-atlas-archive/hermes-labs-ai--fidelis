@@ -1,922 +1,144 @@
-# Fidelis Memory
+# Fidelis Memory 0.3.0rc1 reference
 
-> **Package release v0.2.0.** Install the Hermes Labs distribution from PyPI
-> as `fidelis-memory`; the import name and CLI remain `fidelis`. The separately
-> versioned Fidelis Scaffold protocol remains v0.1.0 in the API and examples
-> below. The separate PyPI project named `fidelis` is unrelated.
-
-## 60-second quickstart
+## Install and run
 
 ```bash
-python3 -m pip install "fidelis-memory==0.2.0"
-fidelis init                  # installs + starts the service (launchd/systemd)
-fidelis watch ~/notes         # auto-ingests markdown/text, polls for new files
-fidelis mcp install           # wires Claude Code MCP integration
-fidelis mcp install --client codex     # wires Codex MCP integration
-fidelis mcp install --client copilot   # wires GitHub Copilot CLI MCP integration
-fidelis mcp install --client gemini    # wires Gemini CLI via `gemini mcp add`
-fidelis mcp install --client openclaw  # wires OpenClaw via `openclaw mcp add`
-# Done. Restart Claude Code. Memory is on.
-```
-
-**What just happened:** fidelis-server runs in the background under your OS service manager, ingests `~/notes` continuously, and exposes recall as MCP tools to Claude Code. No API keys. No cloud LLM. The retrieval is fully local.
-
-**To use programmatically:**
-
-```python
-from fidelis.augment import augment
-from anthropic import Anthropic
-
-client = Anthropic()
-answer = augment(
-    question="What did I say about Sarah?",
-    qtype="single-session-user",
-    llm_call=lambda system, user: client.messages.create(
-        model="claude-opus-4-5",
-        system=system,
-        messages=[{"role": "user", "content": user}],
-        max_tokens=512,
-    ).content[0].text,
-)
-```
-
-`augment()` retrieves memory + wraps with the Fidelis Scaffold + invokes your LLM in one call.
-
-**Agent memory with a local-first retrieval path that makes no LLM call by default.** The optional QA scaffold uses the model your application already supplies.
-
-**Headline numbers (Fidelis v0.2.0):**
-
-- **83.2% R@1** in the checked-in 470-question LongMemEval-S stage-1 retrieval run
-- **73.0% QA accuracy** (317/434 graded questions, Wilson 95% CI [68.7%, 77.0%]) in a separate checked-in run using an Opus reader and grader
-- **Per-qtype scaffold lifts** over a minimal-prompt LLM baseline (smoke n=60): **+20pp on knowledge-update, +16pp on preference, +8pp on multi-session**
-
-These are local project observations, not independent replications.
-
-**Backend portability (LLM that consumes the scaffold):**
-- ✅ **Claude (Opus subscription via `claude` CLI):** 100% hedge + 100% answer compliance on a 10-Q sanity test
-- ✅ **OpenAI Chat Completions API** (validated against `gpt-oss:20b` via Ollama's OpenAI-compatible endpoint): 100% hedge + 100% answer
-- ⚠️ **qwen3.5:9b local (thinking mode):** 40% hedge compliance — model's extended reasoning chains drop the literal hedge instruction. Use qwen models in non-thinking mode or larger model sizes for reliable hedging.
-
-The architectural fidelity contract holds: when the optional LLM tier is
-enabled, the filter outputs only integer pointers — it structurally cannot
-corrupt, rephrase, or hallucinate into the content returned to your agent.
-See [Hybrid recall](#hybrid-recall) for the tier table and the honest
-ceiling on the benchmark-tuned path.
-
-## Fidelis Scaffold
-
-The QA scaffold technique: a 140–180-token versioned, hedge-calibrated, qtype-aware system prompt that sits between Fidelis retrieval and your existing LLM, lifting end-to-end QA accuracy on hard question types without modifying the LLM and at zero incremental inference cost.
-
-```python
-from fidelis.scaffold import wrap_system_prompt, preflight
-
-system = wrap_system_prompt("temporal-reasoning", top_score=0.65)
-assert preflight(system).passed  # 8 static safety checks
-# Hand `system` as the system prompt to your LLM (Claude / GPT / qwen-local / anything).
-```
-
-The scaffold is **versioned** (`[FIDELIS-SCAFFOLD-vX.Y.Z]…[/FIDELIS-SCAFFOLD-vX.Y.Z]`), **bounded** (≤200 tokens, hard cap), and **idempotent** (`wrap(wrap(x)) == wrap(x)`). Versioned markers enable downstream multi-turn drift measurement (driftwatch / agent-convergence-scorer can locate and remove scaffold contributions).
-
-**Smoke evidence (n=60 stratified, Opus reader + Opus grader via Anthropic subscription, $0 incremental cost):**
-
-| qtype | Opus + minimal prompt | Opus + Fidelis Scaffold | scaffold lift |
-|---|---|---|---|
-| knowledge-update | 50% | 70% | **+20pp** |
-| single-session-preference | 44% | 60% | **+16pp** |
-| multi-session | 62% | 70% | **+8pp** |
-| temporal-reasoning | 50% | 50% | 0pp (Opus does it natively) |
-| single-session-user | 100% | 100% | 0pp (ceiling) |
-| single-session-assistant | 100% | 100% | 0pp (ceiling) |
-
-The machine-readable summary in [`../experiments/zeroLLM-FLAGSHIP-evidence/`](../experiments/zeroLLM-FLAGSHIP-evidence/) records the 434 graded questions and the 36 ungraded questions from the 470-question set. See [`scaffold.md`](scaffold.md) for the scaffold contract and preflight.
-
-A separate `/recall` atomic path is purpose-built for short-fact lookup (not session retrieval); it scores 85% R@1 combined with the snapshot layer on a 31-case internal atomic-fact eval. This is a secondary surface; the headline retrieval number above (83.2% R@1 on the full 470-question LongMemEval-S) is the authoritative session-retrieval measurement.
-
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
-
-CI exercises Python 3.10 through 3.14 on Linux and macOS. Direct
-`fidelis-server` launches default `MEM0_TELEMETRY` to `False`, matching the
-generated service configuration and preventing telemetry cleanup from delaying
-graceful process shutdown. Set `MEM0_TELEMETRY=True` explicitly to opt in.
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Made by Hermes Labs](https://img.shields.io/badge/made%20by-Hermes%20Labs-purple)](https://hermes-labs.ai)
-
----
-
-## Architectural boundary
-
-Fidelis's default retrieval path makes no LLM call. The optional LLM tiers
-return integer indices; Fidelis dereferences those indices to stored passages
-instead of accepting generated memory text. This describes Fidelis's own
-contract and is not a claim about every configuration of another product.
-
-Your agent already calls an LLM. fidelis feeds that LLM the right memory
-without adding a second LLM call to retrieve it.
-
-### Where this matters (and where it doesn't)
-
-**Use fidelis when:**
-- You can't send memory contents to a third-party LLM (compliance, legal, healthcare, defense, regulated finance).
-- You need per-query cost to be zero at scale.
-- You need sub-100 ms retrieval.
-- You want fidelity by construction — memory text is verbatim, not LLM-paraphrased.
-
-**Use mem0 / Zep / Letta when:**
-- You need the highest possible benchmark accuracy and cost isn't a constraint.
-- Temporal reasoning and preference-ranking queries dominate your workload (fidelis's weakest categories at 66–67% zero-LLM).
-- You're fine with a cloud LLM dependency in the memory layer.
-
-The LLM tier is available (`tier="filter"` / `tier="flagship"`) if you want
-to opt in to benchmark-parity mode. It's labeled experimental until the
-calibration miss (80% escalation vs 10% intended) is fixed — see
-[Known limitations](#when-to-enable-the-optional-llm-tier).
-
----
-
-## The Problem
-
-Every retrieval system that uses an LLM to select or rank memories has the same failure mode: the LLM rephrases on the way out. You store `"auth tokens expire after 3600 seconds"` and get back `"authentication has a configurable timeout."` The specific fact is gone.
-
-- **Raw vector search** returns candidates by similarity but does not preserve a task-specific relevance guarantee
-- **LLM-based re-rankers** improve relevance but generate text — they summarize, merge, or hallucinate into the content your agent receives
-- **Full RAG pipelines** add latency and cost without solving the fidelity problem
-
-fidelis fixes this structurally. The filter LLM outputs only integer pointers (`[3, 7, 12]`). The server dereferences them to verbatim stored text. The LLM never sees, generates, or touches memory content. Fidelity is architectural, not a prompting convention.
-
-**Headline retrieval (checked-in local LongMemEval-S stage-1 run, 470 questions):**
-
-| Metric | Value |
-|---|---|
-| **R@1** | **83.2%** |
-| **R@5** | **98.3%** |
-| **R@10** | **99.1%** |
-| Per-qtype R@1 | SSA 100% · KU 95.8% · SSU 95.3% · MS 83.5% · SSP 66.7% · TR 66.1% |
-
-**Secondary `/recall` atomic-fact surface** (purpose-built for short-fact lookup, not session retrieval; 31 internal test cases, qwen3.5:2b filter, fully local):
-
-| Mode | R@1 | hit@any | Latency |
-|---|---|---|---|
-| Combined (snapshot + recall) | 85% | 96% | 1303 ms |
-| recall only | 63% | 81% | 1197 ms |
-| recall_b (zero-LLM) | 56% | 96% | 127 ms |
-
----
-
-## Architecture
-
-```
-                    ┌─────────────────────────────────────────────┐
-                    │              fidelis server              │
-                    │                 :19420                       │
-                    └──────────────────┬──────────────────────────┘
-                                       │
-                    ┌──────────────────▼──────────────────────────┐
-                    │             SNAPSHOT LAYER                   │
-                    │   Compressed markdown index (~741 tokens)    │
-                    │   Built once from corpus via `fidelis snapshot`│
-                    │   Returned with /recall — no vector search   │
-                    │   Solves cross-reference queries (0%→50% R@1)│
-                    └──────────────────┬──────────────────────────┘
-                                       │
-                    ┌──────────────────▼──────────────────────────┐
-                    │         STAGE 1 — recall_b (zero-LLM)       │
-                    │   Query decomposition → sub-queries          │
-                    │   Stop-word stripping + bigrams + trigrams   │
-                    │   Vocab expansion (fidelis calibrate)         │
-                    │   Up to 8 sub-queries, merged with RRF       │
-                    │   Latency: ~127ms                            │
-                    └──────────────────┬──────────────────────────┘
-                                       │ up to 100 candidates
-                    ┌──────────────────▼──────────────────────────┐
-                    │       STAGE 2 — integer-pointer filter       │
-                    │   Filter LLM sees: [1] text  [2] text ...   │
-                    │   Filter LLM outputs: [3, 7, 12]  ← ONLY    │
-                    │   Server fetches candidates[3], [7], [12]   │
-                    │   Returns: verbatim stored text              │
-                    │   Added latency: ~1176ms                     │
-                    └─────────────────────────────────────────────┘
-```
-
-The filter LLM never generates memory text. Out-of-range integers are silently ignored. Fidelity is a structural property of the pipeline, not a prompting convention.
-
----
-
-## Benchmarks
-
-### Primary: LongMemEval-S (470 questions, public benchmark)
-
-Measured 2026-04-18. Stage-1 retrieval pipeline (BM25 + turn-level + prefixes + temporal boost), `runP-v35` configuration, on local Ollama.
-
-| Metric | Value | Notes |
-|---|---|---|
-| **R@1** | **83.2%** | top-1 contains gold |
-| **R@5** | **98.3%** | gold in top-5 across all qtypes |
-| **R@10** | **99.1%** | |
-
-Per-qtype R@1: single-session-assistant 100%, knowledge-update 95.8%, single-session-user 95.3%, multi-session 83.5%, single-session-preference 66.7%, temporal-reasoning 66.1%.
-
-Raw retrieval aggregate: [`../bench/runs/runP-v35/aggregate.json`](../bench/runs/runP-v35/aggregate.json).
-
-### Secondary: internal `/recall` atomic-fact eval
-
-Measured 2026-03-28. 31 internal test cases (short-fact lookup, not session retrieval). qwen3.5:2b as filter model, local Ollama. Different surface from LongMemEval — this measures the atomic-fact path, not session retrieval.
-
-| Mode | R@1 | hit@any | MRR | Latency |
-|---|---|---|---|---|
-| Combined (snapshot + recall) | **85%** | **96%** | **0.878** | 1303ms |
-| recall only | 63% | 81% | — | 1197ms |
-| recall_b (zero-LLM) | 56% | 96% | — | 127ms |
-| snapshot only | 41% | — | — | — |
-
-Key results:
-- Snapshot layer contributes **+15% hit@any** vs recall-only
-- Cross-reference queries: recall alone gets **0% R@1**; combined gets **50%**
-- recall_b matches combined hit@any (96%) at 10x lower latency — use it when cost matters
-
----
-
-## Quick Start
-
-**1. Install**
-
-```bash
-python3 -m pip install "fidelis-memory==0.2.0"
-```
-
-**2. Pull Ollama models**
-
-```bash
-ollama pull mistral:7b
+python3 -m pip install "fidelis-memory==0.3.0rc1"
 ollama pull nomic-embed-text
+fidelis init
+fidelis mcp install --client codex
 ```
 
-Requires a running [Ollama](https://ollama.ai) instance.
+Use `fidelis-server` for foreground operation. Default HTTP address:
+`http://127.0.0.1:19420`. Both client and server honor `FIDELIS_PORT` before the
+legacy `COGITO_PORT`. The MCP stdio command is `fidelis mcp serve` (or
+`fidelis-mcp`). It discovers tools without loading the memory store.
 
-**3. Configure filter LLM**
+## Record model
+
+A record contains original text and a stable ID. The service sets `recorded_at`;
+the caller may declare `valid_from`, `valid_to`, `event_at`, `source`, and
+`supersedes` IDs. Corrections create new records. Earlier records remain available
+and receive temporal status such as `superseded`, `expired`, or `not_yet_valid`.
+Declared dates and links are not independent verification of truth.
+
+`as_of` excludes records with a known `recorded_at` later than the requested
+instant, ignores later correction links, and evaluates validity at that instant.
+Backdating validity does not backdate recording time. Legacy records with unknown
+recording times remain visible and are labeled unknown; they cannot establish
+what the system knew at a particular earlier time.
+
+## HTTP endpoints
+
+JSON POST requests use `Content-Type: application/json`.
+
+| Endpoint | Request | Behavior |
+|---|---|---|
+| `GET /health` | — | Version, availability, store/queue state; does not require eager model boot |
+| `POST /store` | `{"text":"fact"}` | Verbatim write; optional temporal fields, ID and metadata |
+| `POST /query` | `{"text":"question","limit":5}` | Fast local vector search with temporal presentation |
+| `POST /get` | `{"id":"record-id"}` | Full record and correction chain |
+| `POST /recent` | `{"limit":10,"kind":"all"}` | Latest recorded entries; `kind:"corrections"` selects replacements |
+| `POST /recall_hybrid` | `{"text":"question","limit":5,"top_k":5,"tier":"zero_llm"}` | Explicit hybrid retrieval |
+| `POST /recall_b` | `{"text":"question","limit":5}` | Legacy decomposed zero-LLM retrieval |
+| `POST /recall` | `{"text":"question","limit":5}` | Legacy retrieval with optional configured LLM filtering |
+| `POST /add` | `{"text":"raw material"}` | Optional model extraction; separate from verbatim store |
+| `POST /replay` | `{}` | Request queued-write replay |
+
+Retrieval requests accept `as_of` as an ISO-8601 timestamp. The normal current
+view retains historical records with explicit labels; callers should inspect
+status, not assume every hit is current. Limits bound the result count.
+
+Example correction through HTTP:
+
+```json
+{"text":"The Atlas release window starts at 10:00 UTC.","supersedes":["earlier-id"],"valid_from":"2026-02-01T00:00:00Z"}
+```
+
+The `supersedes` target must exist in the configured namespace. HTTP clients
+should check both status codes and response bodies. Memory operations can return
+503 when the backing store cannot load; health/discovery remain available.
+
+## Write acknowledgements
+
+- `stored`: the write landed.
+- `duplicate`: an identical existing record was found; no new record was written.
+- `rejected`: screening or validation refused the write.
+- `queued`: the write is durably awaiting replay; it has not landed in the store.
+
+Temporal declarations matter to identity: repeating text with different validity
+or correction declarations is not necessarily an identical write. A rejected
+secret must not be treated as safely retained elsewhere. Screening recognizes
+common secret patterns and obvious noise, not all sensitive information.
+
+Optional `/add` extraction may preserve input verbatim if extraction returns no
+facts. Read `degraded` in the response; successful storage does not prove that
+model extraction succeeded.
+
+## MCP contracts
+
+Exactly six tools are exposed: `fidelis_recall`, `fidelis_store`,
+`fidelis_correct`, `fidelis_get`, `fidelis_recent`, `fidelis_health`.
+
+- Recall requires `query`, defaults to `limit:5`, and accepts `mode:"fast"` or
+  `mode:"thorough"`. Fast calls `/query`; thorough calls `/recall_hybrid` with
+  `tier:"zero_llm"`. It does not silently escalate to a generative model.
+- Store accepts `text` and optional temporal/source metadata.
+- Correct takes the old `id` and replacement `text`. Already-superseded IDs are
+  refused unless the caller explicitly chooses `force:true`.
+- Get takes `id` and returns the full record plus correction links.
+- Recent accepts `limit`, `kind` (`all` or `corrections`), and optional `since`.
+- Health reports availability; a lazy, unloaded store is not an empty corpus.
+
+The old four-tool surface and `cogito_*` compatibility tool names are retired.
+Reconfigure standing instructions and restart MCP clients on upgrade.
+JSON-RPC batches are accepted only when the negotiated protocol supports them
+(`2025-03-26`); malformed input must not terminate the stdio service.
+
+## Retrieval architecture
+
+The default MCP path is a bounded vector search, followed by temporal/status
+handling. It uses the local `nomic-embed-text` model; zero-LLM means no generative
+model, not an absence of learned embeddings or local compute.
+
+Thorough retrieval assembles candidates using multiple dense subqueries and,
+with the `hybrid` extra, applies BM25 within that candidate pool. It merges
+rankings through reciprocal rank fusion; BM25 does not independently search
+the entire corpus. Without
+BM25 the dense path remains available. Install the extra with:
 
 ```bash
-# Option A: direct Anthropic key
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# Option B: any OpenAI-compatible gateway (local LM Studio, OpenClaw, etc.)
-export COGITO_FILTER_ENDPOINT=http://your-gateway/
-export COGITO_FILTER_TOKEN=your-token
-export COGITO_FILTER_MODEL=anthropic/claude-haiku-4-5
+python3 -m pip install "fidelis-memory[hybrid]==0.3.0rc1"
 ```
 
-Or via `.cogito.json` in your working directory:
+Legacy optional filter/flagship tiers can call configured model endpoints. They
+are not the default MCP modes. Historical benchmarks of those pipelines must
+not be attributed to the redesigned fast path. Full QA evaluation is deferred.
 
-```json
-{
-  "filter_endpoint": "http://your-gateway/",
-  "filter_token": "your-token",
-  "filter_model": "anthropic/claude-haiku-4-5"
-}
+## Local configuration and boundaries
+
+Environment variables override file configuration. `fidelis-server --config PATH`
+selects an explicit JSON config; otherwise `.cogito.json` then
+`~/.cogito/config.json` are searched.
+
+- `COGITO_STORE_PATH`: vector store directory, default `~/.cogito/store`.
+- `COGITO_COLLECTION`: Chroma collection.
+- `COGITO_USER_ID`: local namespace, not authentication.
+- `FIDELIS_QUEUE_DIR` / `COGITO_QUEUE_DIR`: queue directory.
+- `COGITO_OLLAMA_URL`: embedding/model service endpoint.
+- `COGITO_EMBED_MODEL`: embedding model; keep one model per collection.
+- `FIDELIS_RETRIEVAL_TELEMETRY_LOG`: optional retrieval diagnostics location.
+
+Never expose the local HTTP service to untrusted networks. Local data is not
+application-encrypted. Back up the entire configured store and queue before an
+upgrade; preserve the old environment for rollback. See [SECURITY.md](../SECURITY.md).
+
+## Native Gemini extension
+
+Alternatively, install the release-pinned native extension:
+
+```sh
+gemini extensions install https://github.com/hermes-labs-ai/fidelis --ref=v0.3.0rc1
 ```
 
-**4. Start the server**
-
-```bash
-fidelis-server
-# or: fidelis server
-```
-
-**5. First recall**
-
-```bash
-fidelis recall "what did we decide about the auth architecture"
-```
-
-```bash
-curl -X POST http://127.0.0.1:19420/recall \
-  -H "Content-Type: application/json" \
-  -d '{"text": "auth architecture decisions"}'
-```
-
----
-
-## Hybrid recall
-
-`recall_hybrid` is the session-retrieval path. Three tiers, one contract:
-
-| Tier | Default? | LLM call during retrieval? | Project observation |
-|---|---|---|---|
-| `zero_llm` | **yes (v0.0.8 default)** | no | 83.2% R@1, runP-v35 stage 1 |
-| `filter` | no | yes, integer-pointer output | ~92% R@1, runO-v34 |
-| `flagship` | no | yes, integer-pointer output | 96.4% R@1, runP-v35 stage 2 (2026-04-18) |
-
-The **zero-LLM tier is the supported default.**
-
-The **filter and flagship tiers are benchmark-tuned and experimental.**
-They ported the architecture that reached 96.4% on LongMemEval_S, but that
-run escalates to flagship on ~80% of queries vs the 10% the threshold
-was designed for — an 8× cost miss we're transparent about in STATUS.md
-and in the `Known limitations` section below. Use them to replicate the
-benchmark or for one-off hard-query lookups; do not base a production
-cost model on them yet.
-
-All three tiers stay in the same integer-pointer fidelity contract as
-`/recall` — only indices cross the LLM boundary.
-
-### Per-category zero-LLM breakdown (LongMemEval_S, 470 q)
-
-| Category | n | Zero-LLM R@1 | Zero-LLM R@5 | Ceiling (flagship) |
-|---|---|---|---|---|
-| single-session-assistant | 56 | **100%** | 100% | 98.2% (regresses) |
-| knowledge-update | 72 | **96%** | 100% | 98.6% |
-| single-session-user | 64 | **95%** | 100% | 100% |
-| multi-session | 121 | 83% | 100% | 99.2% |
-| single-session-preference | 30 | 67% | 97% | 86.7% |
-| temporal-reasoning | 127 | 66% | 94% | 92.1% |
-| **Blended** | **470** | **83.2%** | — | 96.4% |
-
-**Read this honestly:** the zero-LLM tier is near-perfect on single-session
-queries and knowledge-update. It craters on temporal-reasoning and
-preference. The LLM tier buys +26pp on TR and +20pp on Pref — at the cost
-of 80% escalation rate in the current calibration. If your workload is
-session-scoped or fact-like, stay zero-LLM. If it's temporal-heavy, enable
-the filter tier and budget for it.
-
-### When to enable the optional LLM tier
-
-- Your workload has **temporal-reasoning queries** ("what did we discuss before the release?").
-- You need **preference-ranking** between multiple near-matches.
-- You're **replicating the benchmark**, not running production.
-
-Otherwise: zero-LLM default is the answer. It's why this repo exists.
-
-```
-Query
-  │
-  ▼
-┌───────────────────────────────────────────────────────────────┐
-│ Stage 1 — hybrid retrieval (zero-LLM)                          │
-│   • sub-query decomposition + vocab expansion (recall_b logic) │
-│   • dense retrieval with nomic search_query: / search_document:│
-│     prefixes                                                    │
-│   • BM25 over the candidate pool (bm25s, optional extra)       │
-│   • Reciprocal Rank Fusion across runs                         │
-│   • cosine-blended rerank against the original query           │
-└───────────────────────────────────────────────────────────────┘
-  │
-  ▼
-┌───────────────────────────────────────────────────────────────┐
-│ Router (regex classifier)                                      │
-│   • "you told me" / "you said"  → skip (keep Stage 1)          │
-│   • "how many" / "what date"    → call cheap filter            │
-│   • everything else             → keep Stage 1 at filter tier  │
-└───────────────────────────────────────────────────────────────┘
-  │
-  ▼
-┌───────────────────────────────────────────────────────────────┐
-│ Stage 2 — cheap filter  (tier="filter", default)               │
-│   500-char snippets, integer-pointer output                    │
-└───────────────────────────────────────────────────────────────┘
-  │
-  ▼
-┌───────────────────────────────────────────────────────────────┐
-│ Stage 3 — flagship rerank  (tier="flagship", opt-in)           │
-│   2000-char snippets, stronger model, integer output           │
-│   Called when Stage 1 confidence is low or filter failed       │
-└───────────────────────────────────────────────────────────────┘
-```
-
-### Tier tradeoffs
-
-| Tier | Latency | R@1 (LongMemEval_S) | External calls | When to use |
-|---|---|---|---|---|
-| `zero_llm` | ~500ms | — | none | latency-sensitive paths, cost-sensitive ops |
-| `filter` | ~1300ms | 90%+ | cheap filter LLM | default; temporal/counting queries benefit |
-| `flagship` | ~3500ms | **96.4%** | filter + flagship model | hard queries, long sessions, benchmark setup |
-
-### Quick start
-
-```bash
-# Optional dependency for best BM25 fusion (zero deps fallback if absent)
-python3 -m pip install "fidelis-memory[hybrid]==0.2.0"
-
-# Opt-in: set a filter endpoint (any OpenAI-compatible API)
-export COGITO_FILTER_ENDPOINT=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-export COGITO_FILTER_TOKEN=sk-your-key
-export COGITO_FILTER_MODEL=qwen-turbo
-
-# Optional: flagship tier (stronger model, 4x larger context window)
-export COGITO_FLAGSHIP_ENDPOINT=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-export COGITO_FLAGSHIP_TOKEN=sk-your-key
-export COGITO_FLAGSHIP_MODEL=qwen-max
-# Or simpler — if DASHSCOPE_API_KEY is set, the flagship tier auto-configures
-export DASHSCOPE_API_KEY=sk-your-key
-
-fidelis recall-hybrid "auth architecture decisions" --tier filter
-```
-
-HTTP:
-
-```bash
-curl -X POST http://127.0.0.1:19420/recall_hybrid \
-  -H "Content-Type: application/json" \
-  -d '{"text": "how many auth migrations have we done", "tier": "flagship", "limit": 10}'
-```
-
-Python:
-
-```python
-from fidelis.recall_hybrid import recall_hybrid
-from fidelis.config import load, mem0_config
-from mem0 import Memory
-
-cfg = load()
-mem = Memory.from_config(mem0_config(cfg))
-hits, method = recall_hybrid(mem, "auth tokens", user_id="agent", cfg=cfg, tier="filter")
-```
-
-Graceful degradation: if the filter endpoint isn't configured, `tier="filter"`
-falls back to `zero_llm`. If the flagship endpoint isn't configured,
-`tier="flagship"` falls back to `filter` (which itself may degrade to
-`zero_llm`). Nothing raises on missing credentials.
-
-### Regression notice
-
-The hybrid path was validated at **96.4% R@1 on LongMemEval_S** (470 questions,
-runP-v35, 2026-04-18; multi-turn dialog retrieval with turn-level chunking and
-session-date scaffolds). **On the internal 31-case eval** (which measures
-keyword-recall over a store of short atomic facts), `/recall_hybrid` scores
-lower on R@1 than the existing `/recall` path — they solve different problems.
-The hybrid path wins on hit@any, semantic-gap queries, and multi-memory
-aggregation; the existing path wins on prefix-style direct lookup. Default
-behavior is unchanged — `/recall` still drives `fidelis recall`. Use
-`/recall_hybrid` or `fidelis recall-hybrid` when you need the hybrid trait.
-
----
-
-
-### Claude Code session memory
-
-fidelis v0.3.0 can ingest your Claude Code sessions and query them with the
-same turn-pair chunking used in the LongMemEval benchmark.
-
-**Why it matters:** The 96.4% R@1 benchmark result requires role-structured session
-data (user+assistant turn pairs). Flat atomic memories don't have this structure.
-Claude Code stores every session as role-structured JSONL — wiring it to fidelis
-uses the same retrieval architecture as the benchmark, though Claude Code sessions
-have not been independently evaluated at the same scale.
-
-**Install:**
-```bash
-# No new dependencies — uses existing chromadb + Ollama (nomic-embed-text)
-```
-
-**Ingest:**
-```bash
-# Preview (dry run)
-python3 -m fidelis.ingest_claude_sessions --since 2026-04-11 --dry-run
-
-# Ingest last 7 days
-python3 -m fidelis.ingest_claude_sessions --since 2026-04-11
-
-# Ingest all sessions (may take a few minutes)
-python3 -m fidelis.ingest_claude_sessions
-```
-
-**Query:**
-```python
-from fidelis.recall_sessions import query_sessions, query_both
-
-# Session history only
-results = query_sessions("what did we discuss about LPCI last week?", top_k=3)
-
-# Atomic facts + session history side-by-side (no auto-merge)
-both = query_both("fidelis architecture decisions")
-```
-
-**MCP tools (new in v0.3.0):**
-- `cogito_recall_sessions` — query Claude Code sessions
-- `cogito_recall_both` — 3 atomic + 3 session results side-by-side
-
-**Expected accuracy:** ~80-93% depending on query specificity (same pipeline as
-the benchmark; accuracy drops when querying across very long sessions because the
-session embedding averages across all turn content).
-
-**Privacy:** All data stays local. Embedding uses Ollama (localhost:11434, nomic-embed-text).
-ChromaDB at `~/.cogito/store`. Nothing sent to any cloud API. Ingestion is explicit —
-nothing runs automatically. Re-running ingest is idempotent (dedup via content hash).
-
-Full demo: [`docs/claude-code-memory-demo.md`](docs/claude-code-memory-demo.md)
-
-
-## HTTP API
-
-All endpoints return JSON. Server runs on port `19420` by default.
-
-### `GET /health`
-
-```json
-{"status": "ok", "count": 1484, "version": "0.2.0", "calibrated": true, "snapshot": true}
-```
-
-Fields: `count` = total memories in store; `calibrated` = vocab_map present; `snapshot` = snapshot.md exists.
-
----
-
-### `GET /snapshot`
-
-Returns the compressed index markdown built by `fidelis snapshot`.
-
-```json
-{"snapshot": "## Projects\n- **fidelis** — ...", "path": "/home/user/.cogito/snapshot.md"}
-```
-
-Returns 404 if no snapshot has been built yet.
-
----
-
-### `POST /query`
-
-Narrow vector search. L2 threshold filter only. No LLM call. Fast.
-
-Request:
-```json
-{"text": "query string", "limit": 5}
-```
-
-Response:
-```json
-{"memories": [{"text": "...", "score": 0.87}]}
-```
-
----
-
-### `POST /recall`
-
-Broad search + integer-pointer filter. Two stages: zero-LLM RRF candidate pool, then cheap LLM selects by index.
-
-Request:
-```json
-{"text": "query string", "limit": 50, "threshold": 400}
-```
-
-Response:
-```json
-{"memories": [{"text": "...", "score": 0.87}], "method": "filter"}
-```
-
-`method` field: `"filter"` = filter ran successfully; `"fallback_*"` = graceful degradation, all candidates returned instead. Possible fallbacks: `fallback_no_endpoint`, `fallback_unreachable`, `fallback_parse_error`, `fallback_error`.
-
----
-
-### `POST /recall_b`
-
-Zero-LLM recall only. Sub-query decomposition + RRF. 127ms latency. Same hit@any as combined (96%) at lower cost.
-
-Request:
-```json
-{"text": "query string", "limit": 50}
-```
-
-Response:
-```json
-{"memories": [{"text": "...", "score": 0.016}], "method": "decompose_4_v"}
-```
-
-`method` field: `"decompose_N"` = N sub-queries ran; `"decompose_N_v"` = vocab expansion applied.
-
----
-
-### `POST /recall_hybrid`
-
-Hybrid BM25 + dense + RRF retrieval with tiered LLM escalation. Port of
-the architecture that reached **96.4% R@1 on LongMemEval_S**. See
-[Hybrid recall](#hybrid-recall-964-r1-on-longmemeval_s) for the full
-diagram and tradeoffs.
-
-Request:
-```json
-{"text": "query string", "limit": 50, "tier": "filter", "top_k": 5}
-```
-
-`tier` is one of `"zero_llm"`, `"filter"` (default), `"flagship"`.
-`top_k` is how many candidates the reranker sees (default 5).
-
-Response:
-```json
-{"memories": [{"text": "...", "score": 0.72}], "method": "hybrid_12_bm25|filter"}
-```
-
-`method` field encodes the path taken (e.g. `"hybrid_24_bm25|default_s1"` =
-Stage 1 order kept; `"hybrid_12_bm25|filter"` = cheap filter reranked;
-`"hybrid_8_bm25|filter|flagship"` = both reranks ran; `"hybrid_6_nobm25_v|…"`
-= bm25s not installed, vocab expansion active).
-
----
-
-### `POST /store`
-
-Write one memory verbatim. No extraction LLM. Agent decides the content.
-
-This is the preferred write path for agent-curated content.
-
-Request:
-```json
-{"text": "Switched from JWT to session tokens on 2026-03-27 due to compliance requirement", "id": "<optional uuid>"}
-```
-
-Response:
-```json
-{"id": "abc123...", "text": "Switched from JWT to session tokens..."}
-```
-
----
-
-### `POST /add`
-
-Feed text through mem0's extraction LLM before storing. Extracts multiple atomic facts from unstructured input.
-
-Use when you have raw/unstructured text and want automatic fact extraction.
-
-Request:
-```json
-{"text": "free-form text to remember"}
-```
-
-Response:
-```json
-{"status": "stored", "count": 3, "memories": ["extracted fact 1", "extracted fact 2", "extracted fact 3"]}
-```
-
-If extraction returns no facts, Fidelis stores the original input verbatim so
-the write is not silently lost. The response remains HTTP 200 because storage
-succeeded, and adds an explicit degraded marker and record ID:
-
-```json
-{"status": "stored", "count": 1, "memories": ["free-form text to remember"], "degraded": "verbatim-fallback-empty-extraction", "id": "abc123..."}
-```
-
-The CLI exits 0 for this result and prints a stable `status=stored
-degraded=verbatim-fallback-empty-extraction id=<uuid> count=1` line. Callers
-that require extracted facts must inspect `degraded`; exit 0 establishes only
-that the input was stored. mem0 does not distinguish a swallowed extractor
-failure from a legitimate zero-fact result, so this fallback favors durability.
-
----
-
-## CLI Reference
-
-All CLI commands talk to the running HTTP server.
-
-| Command | Description |
-|---|---|
-| `fidelis recall "query"` | Two-stage recall via running server |
-| `fidelis recall "query" --limit 50 --raw` | Raw JSON output |
-| `fidelis recall-hybrid "query" --tier filter` | Hybrid BM25+dense+RRF recall (96.4% R@1 arch) |
-| `fidelis recall-hybrid "query" --tier flagship --top-k 5` | + flagship escalation on hard queries |
-| `fidelis query "query"` | Simple vector query, no filter |
-| `fidelis add "text"` | Add a memory via /add (mem0 extraction) |
-| `fidelis seed ~/notes/` | Bulk-seed from markdown files via /store |
-| `fidelis seed ~/notes/ --add` | Bulk-seed using /add (extraction mode) |
-| `fidelis seed ~/notes/ --dry-run` | Preview without writing |
-| `fidelis seed ~/notes/ --glob "*.txt"` | Custom file pattern |
-| `fidelis snapshot` | Build compressed index layer |
-| `fidelis snapshot --rebuild` | Force rebuild of snapshot |
-| `fidelis snapshot --dry-run` | Preview snapshot without writing |
-| `fidelis calibrate` | Build vocab bridge from corpus (one-time) |
-| `fidelis calibrate --dry-run` | Preview vocab mappings |
-| `fidelis health` | Check server status |
-| `fidelis server` | Start the server (alias for fidelis-server) |
-| `fidelis-server --port 19420` | Start server directly |
-| `fidelis-server --config /path/to.json` | Start with explicit config file |
-
----
-
-## Configuration
-
-Priority: env vars > `.cogito.json` > defaults.
-
-Config file is searched at `./.cogito.json` (cwd) then `~/.cogito/config.json`.
-
-| Env var | Config key | Default | Description |
-|---|---|---|---|
-| `COGITO_PORT` | `port` | `19420` | Server port |
-| `COGITO_USER_ID` | `user_id` | `"agent"` | Local memory namespace selector; not authentication or access control |
-| `COGITO_FILTER_ENDPOINT` | `filter_endpoint` | — | OpenAI-compatible base URL for filter LLM |
-| `COGITO_FILTER_TOKEN` | `filter_token` | — | Bearer token for filter endpoint |
-| `COGITO_FILTER_MODEL` | `filter_model` | `anthropic/claude-haiku-4-5` | Filter LLM model name |
-| `COGITO_FILTER_TIMEOUT_MS` | `filter_timeout_ms` | `12000` | Filter LLM timeout in ms |
-| `ANTHROPIC_API_KEY` | `anthropic_api_key` | — | Direct Anthropic key (alternative to endpoint+token) |
-| `COGITO_STORE_PATH` | `store_path` | `~/.cogito/store` | ChromaDB persistence path |
-| `COGITO_COLLECTION` | `collection` | `cogito_memory` | ChromaDB collection name |
-| `COGITO_OLLAMA_URL` | `ollama_url` | `http://localhost:11434` | Ollama base URL |
-| `COGITO_LLM_MODEL` | `llm_model` | `mistral:7b` | LLM for fact extraction (/add) |
-| `COGITO_EMBED_MODEL` | `embed_model` | `nomic-embed-text` | Embedding model |
-| `COGITO_RECALL_LIMIT` | `recall_limit` | `50` | Candidate pool size for /recall and /recall_b |
-| `COGITO_RECALL_THRESHOLD` | `recall_threshold` | `400.0` | L2 cutoff for /recall candidates |
-| `COGITO_QUERY_THRESHOLD` | `query_threshold` | `250.0` | L2 cutoff for /query results |
-| `COGITO_FLAGSHIP_ENDPOINT` | `flagship_endpoint` | — | OpenAI-compatible base URL for flagship rerank (recall_hybrid tier="flagship") |
-| `COGITO_FLAGSHIP_TOKEN` | `flagship_token` | — | Bearer token for flagship endpoint |
-| `COGITO_FLAGSHIP_MODEL` | `flagship_model` | — | Flagship model name (e.g. `qwen-max`) |
-| `COGITO_FLAGSHIP_TIMEOUT_MS` | `flagship_timeout_ms` | `30000` | Flagship LLM timeout in ms |
-| `DASHSCOPE_API_KEY` | — | — | If set, recall_hybrid auto-configures flagship to DashScope qwen-max |
-| `COGITO_HYBRID_COSINE_WEIGHT` | `hybrid_cosine_weight` | `0.7` | Cosine vs RRF blend weight for hybrid retrieval (0..1) |
-
-`filter_endpoint` accepts any OpenAI-compatible API: Anthropic gateway, LM Studio, Ollama's `/v1` compat layer, OpenClaw, etc.
-
-For Ollama qwen3/qwen3.5 models used as filter, fidelis automatically switches to the native Ollama `/api/chat` endpoint with `think: false` to suppress thinking mode.
-
-### Namespaces are not identities
-
-`user_id` partitions records inside a single store: every retrieval endpoint
-(`/query`, `/recall`, `/recall_b`, `/recall_hybrid`) filters on it, so records
-written under one `user_id` are not returned under another — `/query` is pinned
-by `tests/test_user_id_namespace_isolation.py`.
-
-Two endpoints are deliberately not namespace-scoped: `/health` reports a
-whole-collection count across every namespace, and `/snapshot` is keyed by
-config directory rather than by `user_id`.
-
-That is a **namespace** boundary, not a security one. Specifically:
-
-- The server binds one `user_id` per process, from config, at startup. No
-  endpoint accepts a `user_id` from a request body, so callers cannot select or
-  spoof a namespace over the wire.
-- There is no authentication. Anything that can reach the port reads and writes
-  the configured namespace, which is why the server binds `127.0.0.1` by default.
-- Namespaces share one collection and one on-disk store. Separation is a query
-  filter, not an encryption or access boundary — anyone with read access to
-  `store_path` can read every namespace.
-
-Treat `user_id` as you would a directory name for keeping an agent's memories
-apart from your own, not as a login. Fidelis is single-namespace by design; see
-`agents.md` for when that makes it the wrong tool.
-
----
-
-## Python API
-
-```python
-from fidelis.recall import recall
-from fidelis.recall_b import recall_b
-from fidelis.recall_hybrid import recall_hybrid
-from fidelis.config import load, mem0_config
-from mem0 import Memory
-
-cfg = load()  # reads .cogito.json + env vars
-memory = Memory.from_config(mem0_config(cfg))
-
-# Two-stage recall (recommended default)
-memories, method = recall(memory, "auth architecture", user_id=cfg["user_id"], cfg=cfg)
-for m in memories:
-    print(m["text"])  # verbatim stored text, never rephrased
-
-# Zero-LLM recall (fast path)
-memories, method = recall_b(memory, "auth architecture", user_id=cfg["user_id"], cfg=cfg)
-
-# Hybrid recall (BM25 + dense + RRF + tiered LLM; 96.4% R@1 on LongMemEval_S)
-memories, method = recall_hybrid(
-    memory, "auth architecture", user_id=cfg["user_id"], cfg=cfg,
-    tier="filter",  # "zero_llm" | "filter" | "flagship"
-)
-
-print(method)  # e.g. "filter", "decompose_4_v", "hybrid_12_bm25|filter"
-```
-
----
-
-## Why integers?
-
-When the filter LLM outputs only `[3, 7, 12]`:
-
-- It cannot rephrase memory text — it never generates it
-- It cannot hallucinate new facts into the output
-- It cannot summarize two memories into one
-- An out-of-range integer is silently ignored; it cannot inject noise
-
-Compare to asking the LLM to "return the relevant passages" — even with careful prompting, LLMs will reword, compress, or merge content. The integer-pointer pattern makes fidelity a structural property of the pipeline, not a prompt engineering goal.
-
-The filter prompt:
-```
-Output ONLY a JSON array of integers, ordered from most to least relevant.
-Examples: [1, 4, 7]   or   []
-```
-
-The server then picks `candidates[i]` — verbatim stored text — for each valid integer `i`. The path from storage to retrieval contains no text generation.
-
----
-
-## Setup Recommendations
-
-**Before benchmarking or deploying — run zer0lint first.**
-
-Ingestion quality directly limits retrieval quality. A poorly formatted memory store will underperform regardless of retrieval method. The technical extraction prompt baked into fidelis's default config was validated to produce 0%→100% ingestion improvement via zer0lint diagnostics.
-
-**Session start pattern (agent integration):**
-
-```python
-# 1. Load snapshot into context once at session start
-import urllib.request, json
-resp = urllib.request.urlopen("http://127.0.0.1:19420/snapshot")
-snapshot = json.loads(resp.read())["snapshot"]
-# inject snapshot into system prompt or first user message
-
-# 2. Query per-message via /recall
-# 3. Write new facts via /store (agent-curated) or /add (extraction)
-```
-
-**Calibrate for domain-specific vocabulary:**
-
-```bash
-fidelis calibrate  # reads your corpus, writes vocab_map to .cogito.json
-# then restart server to pick up new vocab_map
-```
-
-Calibration builds a plain-English → technical term bridge. Example: "how fast" → ["latency", "throughput", "ms"]. Improves recall_b on domain-specific queries without adding LLM calls.
-
----
-
-## Built by Hermes Labs
-
-fidelis is part of the [Hermes Labs](https://hermes-labs.ai) AI agent tooling suite:
-
-- **[zer0lint](https://github.com/roli-lpci/zer0lint)** — Memory extraction diagnostics. Run before benchmarking to verify store quality. The technical extraction prompt in fidelis's default config was validated against zer0lint.
-- **[zer0dex](https://github.com/roli-lpci/zer0dex)** — Dual-layer memory architecture pattern that fidelis implements.
-- **[lintlang](https://github.com/roli-lpci/lintlang)** — Static linter for AI agent tool descriptions and prompts
-- **[Little Canary](https://github.com/roli-lpci/little-canary)** — Prompt injection detection
-- **[Suy Sideguy](https://github.com/roli-lpci/suy-sideguy)** — Runtime policy enforcement for agents
-- **fidelis** — Two-stage memory retrieval ← you are here
-
----
-
-## Operations
-
-`fidelis-server` is designed to run under a process supervisor. On macOS the
-reference deployment is a `launchctl`-managed user daemon; on Linux any
-supervisor (systemd, runit, s6) works.
-
-### Health probe
-
-```bash
-curl -s http://127.0.0.1:19420/health
-# {"status":"ok","count":N,"version":"0.3.1","calibrated":true,"snapshot":true}
-```
-
-Non-200 or empty response means the server is down or the handler is wedged.
-
-### Recovery patterns (macOS launchd)
-
-| Symptom | Remediation |
-|---|---|
-| `/health` returns nothing, `launchctl list` shows no cogito entry | Label is disabled. `launchctl enable gui/$(id -u)/ai.hermeslabs.fidelis-server && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.hermeslabs.fidelis-server.plist` |
-| `/health` accepts then resets (HTTP 000 on curl) | Handler wedged. `launchctl kickstart -k gui/$(id -u)/ai.hermeslabs.fidelis-server` — `-k` is required; plain `start` is a no-op when a process is running but stuck. |
-| Writes silently failing | Ollama or mem0 dependency down. `safe_add` queues to `~/.cogito/queue/`; drain with `fidelis replay` once the dependency is back. |
-
-### Observability
-
-`fidelis.telemetry` logs each escalation decision to
-`~/.cogito/escalation.log` (JSONL, append-only, crash-safe). Summarise
-with:
-
-```python
-from fidelis.telemetry import rate
-rate(window_n=100)
-# {"n": 100, "escalated": 12, "rate": 0.12, "by_route": {...}}
-```
-
-Escalation rate is the leading indicator of the known calibration miss
-(80% actual vs 10% intended on the filter/flagship tiers). Zero-LLM tier
-records 0% escalation by construction.
-
-### Write-path resilience
-
-All writes go through `fidelis.degrade.safe_add`:
-
-- Dependency up → memory stored + response returned
-- Extraction returns no facts → original input stored verbatim and response
-  marked `degraded=verbatim-fallback-empty-extraction`
-- Dependency down → write queued to `~/.cogito/queue/<ts>-<uuid>.json`,
-  success returned; no data lost
-- Queue replay uses the same verbatim fallback and removes a queued item only
-  after extraction or fallback storage succeeds
-- Call `fidelis.degrade.replay_queue(memory, user_id)` when the
-  dependency recovers to drain
-
-See `tests/test_graceful_degrade.py` and
-`tests/test_write_fallback_contract.py` for the state machine and public
-fallback contract, and
-`tests/test_graceful_degrade_corruption.py` for the corrupt-queue-file
-branch coverage.
-
----
-
-## Roadmap
-
-- [ ] Pluggable vector backends (pgvector, Qdrant, LlamaIndex)
-- [ ] Pluggable extraction backends (non-Ollama)
-- [ ] Session flush utility (end-of-session seeding)
-- [ ] Benchmark harness as public CLI (`fidelis bench`)
-- [ ] Streaming /recall response
-- [ ] Per-qtype escalation calibration (unblocks filter/flagship graduation to default)
-- [ ] Dispatcher / Path A–B split (`docs/DISPATCHER_DESIGN.md`)
-
----
-
-## License
-
-MIT
+`gemini-extension.json` pins the same PyPI package as the MCP registry manifest.

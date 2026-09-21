@@ -36,6 +36,11 @@ does not run are out of scope.
 ## Supported Versions
 
 Security updates are applied to the latest release only. fidelis is
-pre-release software (0.2.0); expect breaking changes between versions.
+pre-release software (0.3.0rc1); expect breaking changes between versions.
 
 Thank you for helping keep fidelis safe.
+
+Local records and queues are not application-encrypted. The HTTP interface is
+intended for trusted loopback use and has no network authentication. Write
+screening recognizes common secrets and junk but is not comprehensive data-loss
+prevention. Do not store credentials or expose the service to untrusted networks.
