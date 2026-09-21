@@ -2,6 +2,10 @@
 
 <!-- mcp-name: io.github.hermes-labs-ai/fidelis-memory -->
 
+<p align="center">
+  <img src="assets/fidelis-memory-artwork.jpg" width="420" alt="Fidelis Memory mascot — a golden retriever safeguarding memory" />
+</p>
+
 ## Local-first, zero-LLM memory for Codex, Claude Code, and AI agents.
 
 **83.2% R@1 in a checked-in 470-question LongMemEval-S retrieval run. A separate checked-in run answered 317 of 434 graded questions correctly (73.0%, Wilson 95% CI [68.7%, 77.0%]) with an LLM reading Fidelis retrieval. The default retrieval path itself makes no LLM call.**
@@ -12,7 +16,7 @@ Stop re-explaining context to your agent. fidelis returns your original notes ve
 [![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](#known-limitations-v010)
 [![CI](https://github.com/hermes-labs-ai/fidelis/actions/workflows/ci.yml/badge.svg)](https://github.com/hermes-labs-ai/fidelis/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/fidelis-memory)](https://pypi.org/project/fidelis-memory/)
-[![Official MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-5b5bd6)](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.1.0)
+[![Official MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-5b5bd6)](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.2.0)
 [![Made by Hermes Labs](https://img.shields.io/badge/made%20by-Hermes%20Labs-purple)](https://hermes-labs.ai)
 
 ```
@@ -44,10 +48,9 @@ serve.
 
 ## Registries
 
-- [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.1.0) —
+- [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.2.0) —
   `io.github.hermes-labs-ai/fidelis-memory`, currently registered at version
-  0.1.0. The 0.2.0 manifest is included in this release and must be published
-  separately after its package release.
+  0.2.0.
 - [Glama MCP server directory](https://glama.ai/mcp/servers/hermes-labs-ai/fidelis) —
   independent third-party server listing.
 
@@ -114,11 +117,10 @@ The extension launches the released MCP package through `uvx` and includes the
 
 Linux users swap `brew install ollama` for the equivalent install from [ollama.com](https://ollama.com). [See Requirements](#requirements).
 
-Fidelis Memory 0.1.0 is the version currently published in the
-[official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.1.0)
-as `io.github.hermes-labs-ai/fidelis-memory`. After the 0.2.0 package and
-registry publication complete, registry-aware clients can launch the matching
-server directly from PyPI:
+Fidelis Memory 0.2.0 is the version currently published in the
+[official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.2.0)
+as `io.github.hermes-labs-ai/fidelis-memory`. Registry-aware clients can launch
+the matching server directly from PyPI:
 
 ```bash
 uvx --from "fidelis-memory==0.2.0" fidelis mcp serve
