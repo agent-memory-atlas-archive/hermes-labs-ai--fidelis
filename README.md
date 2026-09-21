@@ -2,6 +2,10 @@
 
 <!-- mcp-name: io.github.hermes-labs-ai/fidelis-memory -->
 
+<p align="center">
+  <img src="assets/fidelis-memory-artwork.jpg" width="420" alt="Fidelis Memory mascot — a golden retriever safeguarding memory" />
+</p>
+
 ## Local-first, zero-LLM memory for Codex, Claude Code, and AI agents.
 
 **83.2% R@1 in a checked-in 470-question LongMemEval-S retrieval run. A separate checked-in run answered 317 of 434 graded questions correctly (73.0%, Wilson 95% CI [68.7%, 77.0%]) with an LLM reading Fidelis retrieval. The default retrieval path itself makes no LLM call.**
