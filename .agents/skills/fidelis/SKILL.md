@@ -2,7 +2,7 @@
 name: fidelis
 description: Use when you need agent memory with a zero-LLM default retrieval path — returning stored passages verbatim via BM25 + dense-vector + reciprocal-rank-fusion — and want an HTTP server plus CLI that can also do compressed-index snapshotting and Claude Code/Codex/Copilot/Gemini/OpenClaw MCP wiring. Local-first, PyPI package `fidelis-memory`.
 license: MIT
-compatibility: Requires Python 3.10+; installs via `pip install fidelis-memory==0.1.0`, executable name is `fidelis`. Zero-LLM retrieval path needs no external API key; optional filter/extraction tiers need Ollama or an Anthropic/OpenAI-compatible endpoint.
+compatibility: Requires Python 3.10+; installs via `pip install fidelis-memory==0.2.0`, executable name is `fidelis`. Zero-LLM retrieval path needs no external API key; optional filter/extraction tiers need Ollama or an Anthropic/OpenAI-compatible endpoint.
 ---
 
 # fidelis
@@ -35,7 +35,7 @@ cross-reference queries flat memory or vector-only RAG miss.
 ## Quickstart
 
 ```bash
-pip install "fidelis-memory==0.1.0"
+pip install "fidelis-memory==0.2.0"
 fidelis health
 ```
 
