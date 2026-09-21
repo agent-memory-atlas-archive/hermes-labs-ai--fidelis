@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "fidelis: local-first, zero-LLM memory for Claude Code and AI agents"
-abstract: "fidelis is a local-first, zero-LLM memory system for Claude Code and other AI agents. It stores notes and sessions in a local memory store and returns original passages verbatim rather than paraphrasing them, using BM25 and dense retrieval with reciprocal rank fusion and no LLM in the default retrieval path. The PyPI distribution name is fidelis-memory; the import name and CLI remain fidelis."
+abstract: "Fidelis stores agent-curated records locally and retrieves their original text with stable IDs, correction history, and validity dates. Default MCP recall uses local vector search without a generative LLM. The PyPI distribution is fidelis-memory; the import name and CLI remain fidelis."
 type: software
 authors:
   - family-names: "Bosch Rodriguez"
@@ -10,7 +10,7 @@ authors:
     affiliation: "Hermes Labs"
 license: MIT
 repository-code: "https://github.com/hermes-labs-ai/fidelis"
-version: "0.2.0"
+version: "0.3.0rc1"
 keywords:
   - "agent memory"
   - "zero-LLM retrieval"

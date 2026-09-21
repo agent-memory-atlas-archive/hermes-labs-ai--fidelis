@@ -1,0 +1,54 @@
+{
+  "schema_version": "relation-envelope-fixture/v1",
+  "records": [
+    {
+      "id": "meridian-v1",
+      "text": "On 2025-01-10, Project Meridian previously used queue-v1.",
+      "metadata": {
+        "collection": "fixture-relations",
+        "source": "meridian-operations-log",
+        "source_pointer": "fixture://meridian/prior",
+        "entity_literals": ["Project Meridian"]
+      }
+    },
+    {
+      "id": "meridian-v2",
+      "text": "On 2026-07-26, Project Meridian now uses queue-v2 and supersedes record meridian-v1.",
+      "metadata": {
+        "collection": "fixture-relations",
+        "source": "meridian-change-ledger",
+        "source_pointer": "fixture://meridian/current",
+        "entity_literals": ["Project Meridian"]
+      }
+    },
+    {
+      "id": "meridian-ambiguous",
+      "text": "Project Meridian may supersede record meridian-v1 after review.",
+      "metadata": {
+        "collection": "fixture-relations",
+        "source": "unverified-note",
+        "source_pointer": "fixture://meridian/ambiguous",
+        "entity_literals": ["Project Meridian"]
+      }
+    },
+    {
+      "id": "aurora-unresolved",
+      "text": "Project Aurora has an unresolved migration note.",
+      "metadata": {
+        "collection": "fixture-relations",
+        "source": "aurora-note",
+        "source_pointer": "fixture://aurora/unresolved",
+        "entity_literals": ["Project Aurora"]
+      }
+    },
+    {
+      "id": "unrelated",
+      "text": "The garden irrigation schedule starts at sunrise.",
+      "metadata": {
+        "collection": "fixture-relations",
+        "source": "garden-log",
+        "source_pointer": "fixture://garden/unrelated"
+      }
+    }
+  ]
+}

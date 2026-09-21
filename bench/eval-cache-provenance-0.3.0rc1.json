@@ -1,0 +1,37 @@
+{
+  "schema": "fidelis.embedding-cache-provenance/v1",
+  "old_module_sha256": "9c65b9edd483cf0c07b01c736f55496ac83dabb8a2dfc2ba9a83c692e48f03d3",
+  "new_module_sha256": "8117dce9571b6afb7c65236061964d5498c78de91300c9b884ea75c96aee3448",
+  "old_module_bound_to_exploratory_source_artifact": true,
+  "new_module_bound_to_final_source_artifact": true,
+  "embedding_function_ast_without_docstring_sha256": "039d288a0d2d6107b414dce9c2866bf895ca8d320d8d3c320d8a89a018b5dc67",
+  "ast_equal_without_docstring": true,
+  "embedder_source_sha256": "249715211a4eef6f18427ca9a9245570fe2f18bd0ded3ca2fe005db4f53678bd",
+  "old_combined_embed_source_sha256": "d2040678bfc5dcd01b54914f552a711d4677ad7a7e0afe1bf276c1ab36bec889",
+  "new_combined_embed_source_sha256": "f6ce93d2e6b6c62bb2b80989a3a06fe40a83a553a68e110406cccca6b78dd97a",
+  "old_exact_cache_keys_matched": 6760,
+  "vectors_aliased": 5669,
+  "model": {
+    "name": "nomic-embed-text:latest",
+    "digest": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "nomic-bert",
+      "families": [
+        "nomic-bert"
+      ],
+      "parameter_size": "137M",
+      "quantization_level": "F16",
+      "context_length": 2048,
+      "embedding_length": 768
+    }
+  },
+  "dependencies": {
+    "mem0ai": "2.1.0",
+    "chromadb": "1.5.9",
+    "ollama": "0.6.2"
+  },
+  "skipped_first_questions_to_avoid_running_writer": 90,
+  "note": "Only a function docstring changed; executable AST and embedding class/model are identical. Exact old cache-key matches verify embedder source. Stored vectors were copied under new source-key hashes; retrieval outputs and query embeddings remain fresh."
+}

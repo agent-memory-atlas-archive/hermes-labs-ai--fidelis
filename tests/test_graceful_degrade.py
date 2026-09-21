@@ -122,7 +122,8 @@ def test_empty_extraction_falls_back_to_verbatim(temp_queue, add_result):
     assert result["degraded"] == "verbatim-fallback-empty-extraction"
     assert result["id"]
     assert len(mem.vector_store.inserted) == 1
-    assert mem.vector_store.inserted[0]["payloads"] == [
+    assert [{k: v for k, v in payload.items() if k in {"data", "user_id"}}
+            for payload in mem.vector_store.inserted[0]["payloads"]] == [
         {"data": "durable original text", "user_id": "agent"}
     ]
     assert list(temp_queue.glob("*.json")) == []
@@ -189,7 +190,8 @@ def test_replay_empty_extraction_falls_back_before_deleting_queue(temp_queue, ad
     assert summary["replayed_verbatim"] == 1
     assert summary["remaining"] == 0
     assert len(mem.vector_store.inserted) == 1
-    assert mem.vector_store.inserted[0]["payloads"] == [
+    assert [{k: v for k, v in payload.items() if k in {"data", "user_id"}}
+            for payload in mem.vector_store.inserted[0]["payloads"]] == [
         {"data": "queued durable text", "user_id": "agent"}
     ]
 

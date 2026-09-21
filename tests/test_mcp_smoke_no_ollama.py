@@ -74,7 +74,7 @@ def test_initialize_then_tools_list_without_ollama():
         assert "description" in tool
         assert "inputSchema" in tool
     assert {t["name"] for t in tool_list} == {
-        "fidelis_recall", "fidelis_query", "fidelis_health", "fidelis_orient",
+        "fidelis_recall", "fidelis_store", "fidelis_correct", "fidelis_get", "fidelis_recent", "fidelis_health",
     }
 
 

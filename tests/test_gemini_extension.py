@@ -57,7 +57,7 @@ def test_manifest_launches_the_registry_published_package():
     package_args = [argument["value"] for argument in package["packageArguments"]]
     expected = [
         runtime["name"],
-        f'{runtime["value"]}=={package["version"]}',
+        runtime["value"],
         *package_args,
     ]
     assert entry["args"] == expected
@@ -75,7 +75,7 @@ def test_context_file_names_only_tools_the_server_exposes():
     assert named <= exposed, named - exposed
 
 
-def test_readme_documents_the_extension_install_command():
-    readme = (ROOT / "README.md").read_text()
+def test_reference_documents_the_extension_install_command():
+    readme = (ROOT / "docs" / "full-reference.md").read_text()
     assert "gemini extensions install https://github.com/hermes-labs-ai/fidelis" in readme
     assert "gemini-extension.json" in readme

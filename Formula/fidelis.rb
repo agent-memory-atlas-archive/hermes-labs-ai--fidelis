@@ -1,3 +1,5 @@
+# Experimental source formula; dependency resources are not complete.
+# Use the pinned PyPI package documented in README for the supported RC install.
 # Homebrew formula for fidelis.
 #
 # Tap install (after the formula is in a tap):
@@ -13,12 +15,11 @@
 class Fidelis < Formula
   include Language::Python::Virtualenv
 
-  desc "Agent memory with zero-LLM retrieval and a $0-incremental QA scaffold"
+  desc "Local memory with verbatim records and correction history"
   homepage "https://github.com/hermes-labs-ai/fidelis"
-  url "https://github.com/hermes-labs-ai/fidelis/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "e8e4df1918d5af4b0625bfaddd9d1e22f21d2bb621ff501ba80ac53c50c64a68"
+  url "https://github.com/hermes-labs-ai/fidelis.git", tag: "v0.3.0rc1"
   license "MIT"
-  version "0.1.0"
+  version "0.3.0rc1"
 
   depends_on "python@3.12"
 

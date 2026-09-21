@@ -1,14 +1,14 @@
 {
   "name": "fidelis",
-  "version": "0.2.0",
-  "description": "Local-first, zero-LLM agent memory. Adds fidelis_recall, fidelis_query, fidelis_orient, and fidelis_health MCP tools backed by the Fidelis Memory server on your machine.",
+  "version": "0.3.0rc1",
+  "description": "Local agent memory with verbatim records, correction history, and time-aware recall. Provides fidelis_recall, fidelis_store, fidelis_correct, fidelis_get, fidelis_recent, and fidelis_health.",
   "contextFileName": "GEMINI.md",
   "mcpServers": {
     "fidelis": {
       "command": "uvx",
       "args": [
         "--from",
-        "fidelis-memory==0.2.0",
+        "fidelis-memory==0.3.0rc1",
         "fidelis",
         "mcp",
         "serve"

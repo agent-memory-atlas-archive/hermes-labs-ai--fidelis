@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0rc1 — 2026-09-21
+
+Time-aware verbatim records, explicit corrections, truthful write outcomes, and
+a six-tool MCP surface with fast zero-LLM recall. Public install/startup safeguards
+are retained. MCP names change; see [upgrade notes](docs/releases/0.3.0rc1.md).
+Historical benchmark scores are not evidence for the redesigned default path.
+
 # Unreleased
 
 ## v0.2.0

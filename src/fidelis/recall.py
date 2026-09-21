@@ -23,6 +23,7 @@ Or hit the HTTP endpoint:
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from typing import Any
@@ -58,6 +59,22 @@ def recall(
 
     if not candidates:
         return [], "no_candidates"
+
+    # Drop read-time noise (raw session-capture fragments — voice-tagged tool_result
+    # / system-reminder dumps) before dedup + precision filtering. A single such
+    # capture ranks #1 yet is not a fact; dedup only collapses copies, so it cannot
+    # remove a lone one. Deterministic, no LLM; gated by cfg["recall_drop_noise"].
+    if cfg.get("recall_drop_noise", True):
+        candidates = _drop_noise(candidates)
+
+    # Collapse near-identical duplicates before precision filtering. Re-stored
+    # session-continuity preambles and voice exemplars accumulate as near-byte-identical
+    # entries that otherwise flood recall (observed: 9 of top-10 identical). Deterministic,
+    # no LLM; gated by cfg["recall_dedup"] (default on).
+    if cfg.get("recall_dedup", True):
+        candidates = _dedup_candidates(
+            candidates, threshold=cfg.get("recall_dedup_threshold", 0.8)
+        )
 
     # Stage 2 — integer-pointer filter
     selected, filter_method = _filter(query, candidates, cfg)
@@ -294,3 +311,106 @@ def _resolve_filter_endpoint(cfg: dict[str, Any]) -> tuple[str, str]:
         return endpoint.rstrip("/"), token
 
     return "", ""
+
+
+# ── near-duplicate dedup (read-time precision) ──────────────────────────────
+# Re-stored session-continuity preambles and voice exemplars accumulate as
+# near-byte-identical entries (different timestamps / role tags, identical body)
+# that flood recall. Collapse them deterministically at read time so one polluted
+# body cannot crowd out genuinely distinct memories. No model call.
+
+_DEDUP_STRIP = re.compile(
+    r"\[(?:user|assistant|voice:[^\]]*)\]"                    # role / voice tags
+    r"|session\b.*?continuity:"                              # 'SESSION <date> CONTINUITY:'
+    r"|\d{4}-\d{2}-\d{2}(?:[t ]\d{2}:\d{2}(?::\d{2})?z?)?"   # ISO date(time)s
+    r"|\b\d{1,2}:\d{2}(?::\d{2})?\b"                         # bare clock times
+    r"|</?system-reminder>",
+    re.IGNORECASE,
+)
+
+
+def _normalize_for_dedup(text: str) -> str:
+    t = _DEDUP_STRIP.sub(" ", (text or "").lower())
+    t = re.sub(r"[^a-z0-9]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _shingles(norm: str, k: int = 4) -> frozenset:
+    words = norm.split()
+    if len(words) < k:
+        return frozenset(words)
+    return frozenset(" ".join(words[i:i + k]) for i in range(len(words) - k + 1))
+
+
+def _jaccard(a: frozenset, b: frozenset) -> float:
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    union = len(a | b)
+    return len(a & b) / union if union else 0.0
+
+
+def _dedup_candidates(candidates: list[dict], threshold: float = 0.8) -> list[dict]:
+    """
+    Collapse near-identical candidates, keeping the first (highest-ranked) of each
+    cluster. Input order is preserved; a candidate whose normalized shingle set is
+    >= `threshold` Jaccard-similar to an already-kept candidate is dropped.
+    Deterministic, no model calls.
+    """
+    kept: list[dict] = []
+    kept_sigs: list[frozenset] = []
+    for c in candidates:
+        sig = _shingles(_normalize_for_dedup(c.get("text", "")))
+        if any(_jaccard(sig, s) >= threshold for s in kept_sigs):
+            continue
+        kept.append(c)
+        kept_sigs.append(sig)
+    return kept
+
+
+# ── read-time noise filter (deterministic, no-LLM) ──────────────────────────
+# The session-capture producer (forever-memory "voice exemplars") stores raw
+# transcript fragments tagged [voice:user]: tool-result dumps, <system-reminder>
+# blocks, skill preambles. These are not facts, yet they are large and lexically
+# rich, so they rank highly and crowd genuine memories out of recall (observed
+# live: a "[voice:user] [tool_result: <line-numbered index dump>" ranked #1 at
+# score 1). _dedup only collapses near-identical COPIES — a single such capture
+# still ranks #1, so dedup cannot remove it. Drop it at read time. The predicate
+# is deliberately narrow: the producer LEADS each capture with the voice tag, so
+# we match a leading [voice:*] co-occurring with a raw-capture marker (curated
+# prose that merely mentions these tokens mid-sentence is not matched), plus
+# oversized dumps that lead with a tool_result. Nothing is deleted from the
+# store; this is a read-time view filter, gated by cfg["recall_drop_noise"].
+
+_VOICE_TAG_LEAD = re.compile(r"^\s*\[voice:", re.IGNORECASE)
+_CAPTURE_MARKERS = (
+    "[tool_result:",
+    "<system-reminder",
+    "[hermes-blind]",
+    "base directory for this skill",
+)
+_OVERSIZED_DUMP_CHARS = 4000
+
+
+def _is_noise(text: str) -> bool:
+    """True for raw session-capture fragments that are not facts. Conservative:
+    a candidate is noise only if it LEADS with a [voice:*] tag and contains a
+    raw-capture marker, or is an oversized dump that leads with a tool_result.
+    A short [voice:user] quote with no capture marker is a genuine utterance and
+    is kept; prose that mentions these tokens mid-body is kept."""
+    t = text or ""
+    low = t.lower()
+    if _VOICE_TAG_LEAD.search(t) and any(m in low for m in _CAPTURE_MARKERS):
+        return True
+    if len(t) > _OVERSIZED_DUMP_CHARS and "[tool_result:" in low[:200]:
+        return True
+    return False
+
+
+def _drop_noise(candidates: list[dict]) -> list[dict]:
+    """Remove read-time noise candidates. Safety: if every candidate is noise,
+    return the original list unchanged — a precision filter must never empty the
+    result pool (better to surface a noisy memory than nothing)."""
+    kept = [c for c in candidates if not _is_noise(c.get("text", ""))]
+    return kept if kept else candidates

@@ -86,27 +86,64 @@ def test_bm25_search_handles_missing_index():
 # Fake Memory + monkey-patched embed for end-to-end routing tests
 # ---------------------------------------------------------------------------
 
-class FakeMemory:
-    """Minimal mem0-compatible stub for unit tests."""
+class _FakeSearchHit:
+    """Stand-in for the objects mem0's ``vector_store.search()`` returns —
+    real hits expose ``.payload`` (dict with a ``data`` key) and ``.score``
+    (chroma cosine distance, 0..2, lower=better)."""
+
+    def __init__(self, payload: dict, score: float):
+        self.payload = payload
+        self.score = score
+
+
+class _FakeVectorStore:
+    """Minimal stand-in for ``memory.vector_store`` — the direct search path
+    ``_pool_search`` now uses (bypasses the broken ``memory.search()`` /
+    ``score_and_rank`` wrapper, see ``recall_b._pool_search`` docstring)."""
 
     def __init__(self, memories: list[str]):
         self._memories = memories
 
-    def search(self, query: str, *, filters: dict, top_k: int) -> dict:
-        # Deterministic: return all memories with rank by substring match count,
-        # capped to ``top_k``.
+    def search(self, *, query: str, vectors, top_k: int, filters: dict):
+        # Deterministic: rank by substring match count (same contract the
+        # old fake .search() used), capped to top_k. vectors/filters unused —
+        # the fake doesn't need a real embedding space to be deterministic.
         q_lower = query.lower()
         scored = []
         for m in self._memories:
-            score = sum(1 for tok in q_lower.split() if tok in m.lower())
-            scored.append((m, score))
+            count = sum(1 for tok in q_lower.split() if tok in m.lower())
+            scored.append((m, count))
         scored.sort(key=lambda x: -x[1])
-        return {
-            "results": [
-                {"memory": m, "score": 100.0 - score}  # lower score = better for mem0
-                for m, score in scored[:top_k]
-            ]
-        }
+        max_count = max((c for _, c in scored), default=1) or 1
+        return [
+            # distance 0..2, lower=better — invert match count into a distance.
+            _FakeSearchHit({"data": m}, 2.0 * (1 - count / max_count))
+            for m, count in scored[:top_k]
+        ]
+
+
+class _FakeEmbeddingModel:
+    """Minimal stand-in for ``memory.embedding_model`` — only used by
+    ``_pool_search`` to obtain a query vector to hand to vector_store.search,
+    which this fake vector store ignores anyway."""
+
+    def embed(self, text: str, memory_action: str | None = None):
+        return [0.0, 0.0, 0.0, 0.0]
+
+
+class FakeMemory:
+    """Minimal mem0-compatible stub for unit tests.
+
+    Exposes ``embedding_model`` + ``vector_store`` (the interface
+    ``recall_b._pool_search`` uses) rather than a top-level ``.search()`` —
+    matches the real ``mem0.Memory`` shape that ``_pool_search`` bypasses
+    ``.search()`` to reach directly.
+    """
+
+    def __init__(self, memories: list[str]):
+        self._memories = memories
+        self.embedding_model = _FakeEmbeddingModel()
+        self.vector_store = _FakeVectorStore(memories)
 
 
 @pytest.fixture

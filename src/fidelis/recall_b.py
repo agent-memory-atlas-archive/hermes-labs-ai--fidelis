@@ -19,8 +19,16 @@ from __future__ import annotations
 import json as _json
 import math
 import re
+import time
 import urllib.request
 from typing import Any
+
+from fidelis.relation_envelope import (
+    relation_envelopes_enabled,
+    visible_payload_metadata,
+)
+
+from fidelis.degrade import _embed_bounded
 
 
 # Words that don't contribute to retrieval; stripped before sub-query generation.
@@ -187,19 +195,25 @@ def _rrf_merge(
     Returns a unified list ordered by RRF score, deduplicated by text.
     """
     scores: dict[str, float] = {}
-    canonical: dict[str, dict] = {}  # text → first-seen result dict
+    canonical: dict[str, dict] = {}
 
     for run in runs:
         for rank, item in enumerate(run, 1):
             text = item.get("text", "")
             if not text:
                 continue
-            scores[text] = scores.get(text, 0.0) + 1.0 / (_RRF_K + rank)
-            if text not in canonical:
-                canonical[text] = item
+            key = _candidate_key(item)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
+            if key not in canonical:
+                canonical[key] = item
 
-    merged = sorted(canonical.values(), key=lambda x: scores[x["text"]], reverse=True)
+    merged = sorted(canonical.values(), key=lambda x: scores[_candidate_key(x)], reverse=True)
     return merged[:limit]
+
+
+def _candidate_key(item: dict) -> str:
+    """Stable identity when available; exact text is the legacy fallback."""
+    return str(item.get("id") or item.get("record_id") or item.get("text") or "")
 
 
 def _batch_embed(texts: list[str], cfg: dict[str, Any]) -> list[list[float]] | None:
@@ -262,7 +276,7 @@ def _cosine_rerank(
         cosine_scores.append(_cosine_sim(query_vec, cv))
 
     # Normalize RRF scores to [0, 1]
-    rrf_vals = [rrf_scores.get(c["text"], 0.0) for c in candidates]
+    rrf_vals = [rrf_scores.get(_candidate_key(c), 0.0) for c in candidates]
     rrf_max = max(rrf_vals) if rrf_vals else 1.0
     rrf_norm = [v / rrf_max if rrf_max > 0 else 0.0 for v in rrf_vals]
 
@@ -293,6 +307,108 @@ def _cosine_rerank(
     return reranked, False
 
 
+def _pool_search(
+    memory: Any,
+    query: str,
+    user_id: str,
+    top_k: int,
+    trace: Any | None = None,
+    probe_id: str | None = None,
+) -> dict[str, list[dict]]:
+    """Direct vector-store candidate search — bypasses ``mem0.Memory.search()``.
+
+    ``memory.search()`` routes through mem0 2.0.x's ``score_and_rank``, which
+    (verified empirically, see ``server.py`` ``/query`` handler) returns a
+    broken ``score=1.0`` for every result regardless of similarity. That bug
+    doesn't just mislabel the score field — because RRF fusion here uses the
+    *order* results come back in as each run's rank, a corrupted ranking
+    corrupts fusion input before BM25/RRF/cosine ever runs. ``/query`` already
+    works around this by embedding the query itself and calling
+    ``memory.vector_store.search()`` directly; this helper does the same
+    thing so ``recall_b`` (and ``recall_hybrid``, which imports this) get a
+    properly-ordered candidate pool.
+
+    Root-caused + measured 2026-07-20 against the live 30-query
+    ``gold-set-v1.jsonl`` benchmark: swapping this in raised recall_b's R@5
+    from 6.67% to 30.0% (simulated via the equivalent /query-backed pool
+    before this patch landed). See ~/ai-infra/tools/loops/retrieval-hit-rate
+    receipts for the pre/post numbers.
+
+    Returns the same ``{"results": [{"memory": str, "score": float}, ...]}``
+    shape ``memory.search()`` returns, so callers need no other changes.
+    """
+    started = time.perf_counter()
+    try:
+        qv = _embed_bounded(memory.embedding_model, query, memory_action="search")
+        raw = memory.vector_store.search(
+            query=query, vectors=[qv], top_k=top_k,
+            filters={"user_id": user_id},
+        )
+        results = []
+        for r in raw or []:
+            payload = dict(r.payload or {})
+            text = payload.get("data", "")
+            if not text:
+                continue
+            record_id = (
+                getattr(r, "id", None)
+                or payload.get("id")
+                or payload.get("memory_id")
+                or payload.get("record_id")
+            )
+            results.append({
+                "memory": text,
+                "id": str(record_id) if record_id else None,
+                "metadata": visible_payload_metadata(
+                    payload,
+                    enabled=relation_envelopes_enabled(),
+                ),
+                # mem0 2.x already returns a similarity, 1/(1+distance), in (0, 1];
+                # larger = closer. Clamp only — same convention /query uses.
+                "score": round(max(0.0, min(1.0, r.score or 0.0)), 3),
+            })
+    except Exception as exc:
+        # Never propagate — a single sub-query's embed/search failure (Ollama
+        # 500 on an oversized sub-query, transient timeout, malformed response)
+        # must not abort the whole recall. Callers treat empty results the
+        # same as a skipped sub-query.
+        if trace is not None:
+            try:
+                trace.event(
+                    "dense_admission",
+                    "error",
+                    probe_id=probe_id,
+                    requested_count=top_k,
+                    returned_count=0,
+                    saturated=False,
+                    failure_class=type(exc).__name__,
+                    latency_ms=round(
+                        (time.perf_counter() - started) * 1000,
+                        3,
+                    ),
+                )
+            except Exception:
+                pass
+        return {"results": []}
+    if trace is not None:
+        try:
+            trace.event(
+                "dense_admission",
+                "ok",
+                probe_id=probe_id,
+                requested_count=top_k,
+                returned_count=len(results),
+                saturated=len(results) >= top_k,
+                latency_ms=round(
+                    (time.perf_counter() - started) * 1000,
+                    3,
+                ),
+            )
+        except Exception:
+            pass
+    return {"results": results}
+
+
 def recall_b(
     memory: Any,
     query: str,
@@ -314,12 +430,26 @@ def recall_b(
     runs: list[list[dict]] = []
 
     for sq in subqueries:
-        raw = memory.search(sq, filters={"user_id": user_id}, top_k=per_query_limit)
-        candidates = [
-            {"text": r.get("memory", ""), "score": round(r.get("score", 9999), 3)}
-            for r in raw.get("results", [])
-            if r.get("memory")
-        ]
+        try:
+            raw = _pool_search(memory, sq, user_id, per_query_limit)
+        except Exception:
+            # A single sub-query embed/search failure (Ollama 500 on an oversized
+            # sub-query, transient timeout) must not abort the whole recall — skip it
+            # and let RRF cover from the sub-queries that succeeded. Mirrors the
+            # graceful-degradation already in _batch_embed and recall.py's filter.
+            continue
+        candidates = []
+        for r in (raw or {}).get("results", []):
+            if not r.get("memory"):
+                continue
+            candidate = {
+                "text": r.get("memory", ""),
+                "score": round(r.get("score", 9999), 3),
+            }
+            for key in ("id", "metadata", "source_pointer", "created_at", "recorded_at"):
+                if r.get(key) is not None:
+                    candidate[key] = r[key]
+            candidates.append(candidate)
         if candidates:
             runs.append(candidates)
 
@@ -333,9 +463,9 @@ def recall_b(
     rrf_scores: dict[str, float] = {}
     for run in runs:
         for rank, item in enumerate(run, 1):
-            text = item.get("text", "")
-            if text:
-                rrf_scores[text] = rrf_scores.get(text, 0.0) + 1.0 / (_RRF_K + rank)
+            key = _candidate_key(item)
+            if key:
+                rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
 
     # Cosine rerank against original query
     reranked, filtered = _cosine_rerank(query, merged, rrf_scores, cfg)

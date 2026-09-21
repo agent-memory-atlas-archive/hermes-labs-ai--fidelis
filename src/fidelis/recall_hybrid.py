@@ -1,14 +1,11 @@
 """
 recall_hybrid — BM25 + dense + RRF retrieval with optional tiered LLM escalation.
 
-Default tier is ``zero_llm`` (83.2% R@1 on LongMemEval_S, $0/query, ~90 ms,
-fully local). The LLM tiers (``filter`` and ``flagship``) are benchmark-tuned
-and opt-in: they port the architecture that reached 96.4% R@1 at flagship
-tier (runP-v35, 2026-04-18, 470 questions) but currently escalate on ~80%
-of queries versus the 10% the threshold was designed for — see
-``docs/RELEASE-SCOPE.md`` and ``docs/THRESHOLD-AUDIT.md``. Use the LLM
-tiers for benchmark replication or hard-query lookups; do not base a
-production cost model on them yet.
+Default tier is ``zero_llm``: local BM25 + dense + RRF retrieval with no
+retrieval LLM. The LLM tiers (``filter`` and ``flagship``) are experimental
+and opt-in. Their historical flagship benchmark claim is retired because
+documented harness defects prevent it from serving as current product
+evidence.
 
 Adaptation to production data shape
 -----------------------------------
@@ -51,8 +48,14 @@ from typing import Any
 
 from fidelis.recall_b import (
     _build_subqueries,
+    _candidate_key,
     _cosine_sim,
+    _pool_search,
     MAX_SUBQUERIES,
+)
+from fidelis.relation_envelope import (
+    declared_pair_roles,
+    validated_envelope_for_candidate,
 )
 
 # ---------------------------------------------------------------------------
@@ -138,7 +141,8 @@ def classify_query(query: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# BM25 helpers (bm25s is optional; fall back to pure-dense if missing)
+# BM25 helpers. The supported package includes bm25s; the pure-dense fallback
+# keeps older or manually assembled environments operational in degraded mode.
 # ---------------------------------------------------------------------------
 def _bm25_available() -> bool:
     """Return True if the ``bm25s`` package is importable."""
@@ -207,12 +211,141 @@ def _embed_queries(texts: list[str], cfg: dict[str, Any]) -> list[list[float]] |
 # ---------------------------------------------------------------------------
 # Stage 1: BM25 + dense + RRF hybrid retrieval
 # ---------------------------------------------------------------------------
+def _admit_declared_relation_links(
+    memory: Any,
+    pool: list[dict],
+    *,
+    user_id: str,
+    pool_size: int,
+    evidence_needs: tuple[str, ...] | list[str],
+    admission_paths: dict[str, list[str]],
+    trace: Any | None = None,
+) -> tuple[list[dict], int]:
+    """Admit explicit raw-record links inside the canonical bounded pool.
+
+    This is a by-ID continuation from already-admitted records, not an
+    independent retriever.  It runs only for a declared prior/current need,
+    validates raw-text hashes and user namespace on both records, keeps the
+    total pool budget unchanged, and never changes source text or scores.
+    """
+
+    needs = {str(value) for value in evidence_needs}
+    bounded = list(pool[:pool_size])
+    if not {"prior", "current"}.issubset(needs) or not bounded:
+        return bounded, 0
+
+    existing = {_candidate_key(candidate) for candidate in bounded}
+    protected_sources: set[str] = set()
+    pending: list[tuple[str, dict]] = []
+    for candidate in list(bounded):
+        validated = validated_envelope_for_candidate(candidate)
+        if not validated:
+            continue
+        source_id, envelope = validated
+        if envelope.get("ambiguity_status") == "unresolved":
+            continue
+        linked_ids = [
+            str(value)
+            for value in envelope.get("linked_raw_record_ids", [])
+            if value
+        ]
+        if not linked_ids:
+            continue
+        for target_id in linked_ids:
+            if target_id in existing:
+                continue
+            try:
+                raw = memory.vector_store.get(target_id)
+                payload = dict(getattr(raw, "payload", None) or {})
+            except Exception:
+                continue
+            if str(payload.get("user_id") or "") != str(user_id):
+                continue
+            text = str(payload.get("data") or "")
+            if not text:
+                continue
+            linked = {
+                "id": str(
+                    getattr(raw, "id", None)
+                    or payload.get("record_id")
+                    or target_id
+                ),
+                "text": text,
+                # Stage 1 recomputes canonical cosine/fusion scores below.
+                "score": 0.0,
+                "metadata": {
+                    key: value
+                    for key, value in payload.items()
+                    if key != "data"
+                },
+            }
+            target_validated = validated_envelope_for_candidate(linked)
+            if not target_validated or target_validated[0] != target_id:
+                continue
+            target_envelope = target_validated[1]
+            if target_envelope.get("ambiguity_status") == "unresolved":
+                continue
+            roles = declared_pair_roles(
+                envelope,
+                target_id,
+                target_envelope,
+            )
+            if not {
+                "may_support_prior",
+                "may_support_current",
+            }.issubset(roles):
+                continue
+            protected_sources.add(source_id)
+            pending.append((source_id, linked))
+            existing.add(target_id)
+
+    admitted = 0
+    protected_targets: set[str] = set()
+    for source_id, linked in pending:
+        target_id = _candidate_key(linked)
+        if len(bounded) >= pool_size:
+            replacement = next(
+                (
+                    index
+                    for index in range(len(bounded) - 1, -1, -1)
+                    if _candidate_key(bounded[index])
+                    not in protected_sources | protected_targets
+                ),
+                None,
+            )
+            if replacement is None:
+                continue
+            bounded.pop(replacement)
+        bounded.append(linked)
+        protected_targets.add(target_id)
+        admission_paths.setdefault(target_id, []).append(
+            f"relation:{source_id}"
+        )
+        admitted += 1
+
+    if trace is not None:
+        try:
+            trace.event(
+                "relation_link_admission",
+                "ok" if admitted else "no_declared_link",
+                requested_facets=sorted(needs),
+                admitted_count=admitted,
+                pool_count=len(bounded),
+                pool_limit=pool_size,
+            )
+        except Exception:
+            pass
+    return bounded, admitted
+
+
 def _hybrid_stage1(
     memory: Any,
     query: str,
     user_id: str,
     cfg: dict[str, Any],
     pool_size: int,
+    trace: Any | None = None,
+    evidence_needs: tuple[str, ...] | list[str] = (),
 ) -> tuple[list[dict], list[float], str]:
     """Stage 1 hybrid retrieval over the existing mem0 store.
 
@@ -231,29 +364,78 @@ def _hybrid_stage1(
 
     # --- Build candidate pool from mem0 (same as recall_b) ---
     per_query_limit = min(pool_size, 20)
-    seen_texts: set[str] = set()
+    seen_keys: set[str] = set()
     pool: list[dict] = []
-    # Per-sub-query ranked lists, for RRF downstream (by text)
-    runs_by_text: list[list[str]] = []
-    for sq in subqueries:
-        raw = memory.search(sq, filters={"user_id": user_id}, top_k=per_query_limit)
-        run_texts: list[str] = []
+    admission_paths: dict[str, list[str]] = {}
+    # Per-sub-query ranked lists, for RRF downstream (by stable record key).
+    runs_by_key: list[list[str]] = []
+    for probe_index, sq in enumerate(subqueries):
+        # _pool_search bypasses mem0.Memory.search()'s broken score_and_rank
+        # (mem0 2.0.x returns score=1.0 / mis-ordered results — see
+        # recall_b._pool_search docstring). Fixed 2026-07-20 alongside recall_b;
+        # this is what let hybrid's fusion actually beat vector-only /query.
+        probe_id = (
+            trace.probe_id(sq, probe_index)
+            if trace is not None
+            else None
+        )
+        if trace is None:
+            raw = _pool_search(memory, sq, user_id, per_query_limit)
+        else:
+            raw = _pool_search(
+                memory,
+                sq,
+                user_id,
+                per_query_limit,
+                trace=trace,
+                probe_id=probe_id,
+            )
+        run_keys: list[str] = []
         for r in raw.get("results", []):
             text = r.get("memory", "")
             if not text:
                 continue
-            run_texts.append(text)
-            if text not in seen_texts:
-                seen_texts.add(text)
-                pool.append({"text": text, "score": round(r.get("score", 9999), 3)})
-        if run_texts:
-            runs_by_text.append(run_texts)
+            candidate = {"text": text, "score": round(r.get("score", 9999), 3)}
+            for field in ("id", "metadata", "source_pointer", "created_at", "recorded_at"):
+                if r.get(field) is not None:
+                    candidate[field] = r[field]
+            key = _candidate_key(candidate)
+            run_keys.append(key)
+            if probe_id is not None:
+                admission_paths.setdefault(key, []).append(probe_id)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                pool.append(candidate)
+        if run_keys:
+            runs_by_key.append(run_keys)
+
+    if trace is not None:
+        try:
+            trace.event(
+                "pool_construction",
+                "ok" if pool else "empty",
+                unique_count=len(pool),
+                pool_limit=pool_size,
+                saturated=len(pool) >= pool_size,
+                run_count=len(runs_by_key),
+            )
+        except Exception:
+            pass
 
     if not pool:
         return [], [], "no_candidates"
 
-    # Cap pool (mem0 already de-duplicated, but bound worst case)
-    pool = pool[:pool_size]
+    # Cap the dense union, then use explicit raw-record links to reserve space
+    # inside the same budget when the planner declared a comparative need.
+    pool, linked_admitted = _admit_declared_relation_links(
+        memory,
+        pool,
+        user_id=user_id,
+        pool_size=pool_size,
+        evidence_needs=evidence_needs,
+        admission_paths=admission_paths,
+        trace=trace,
+    )
     pool_texts = [c["text"] for c in pool]
 
     # --- Prefixed embeddings ---
@@ -262,14 +444,47 @@ def _hybrid_stage1(
 
     # If embeddings failed, fall back to mem0 order (graceful)
     if doc_vecs is None or q_vecs is None:
-        method = f"hybrid_fallback_no_embed_{len(runs_by_text)}"
+        if trace is not None:
+            try:
+                trace.event(
+                    "hybrid_embeddings",
+                    "error",
+                    candidate_count=len(pool),
+                    failure_class="embedding_result_unavailable",
+                    fallback_path="pool_order",
+                )
+            except Exception:
+                pass
+        link_tag = f"_links{linked_admitted}" if linked_admitted else ""
+        method = (
+            f"hybrid_fallback_no_embed_{len(runs_by_key)}{link_tag}"
+        )
         return pool, [1.0] * len(pool), method
+    if trace is not None:
+        try:
+            trace.event(
+                "hybrid_embeddings",
+                "ok",
+                candidate_count=len(pool),
+            )
+        except Exception:
+            pass
 
     query_vec = q_vecs[0]
     sq_vecs = q_vecs[1:]
 
     # --- BM25 index on the candidate pool ---
     bm25 = _bm25_index(pool_texts) if _bm25_available() else None
+    if trace is not None:
+        try:
+            trace.event(
+                "bm25",
+                "ok" if bm25 is not None else "unavailable",
+                available=bm25 is not None,
+                candidate_count=len(pool),
+            )
+        except Exception:
+            pass
 
     # --- Collect RRF runs ---
     runs: list[list[int]] = []
@@ -288,9 +503,9 @@ def _hybrid_stage1(
             runs.append([i for i, _ in bm25_hits])
 
     # Run: mem0's own ranking (per sub-query, mapped back to pool indices)
-    text_to_idx = {t: i for i, t in enumerate(pool_texts)}
-    for run_texts in runs_by_text:
-        runs.append([text_to_idx[t] for t in run_texts if t in text_to_idx])
+    key_to_idx = {_candidate_key(item): i for i, item in enumerate(pool)}
+    for run_keys in runs_by_key:
+        runs.append([key_to_idx[key] for key in run_keys if key in key_to_idx])
 
     # --- RRF merge ---
     rrf: dict[int, float] = {}
@@ -317,9 +532,38 @@ def _hybrid_stage1(
     for item, idx_and_score in zip(ranked, blended):
         item["score"] = round(cosine_scores.get(idx_and_score[0], 0.0), 4)
 
+    if trace is not None:
+        try:
+            trace.record_candidates(
+                [
+                    {
+                        "candidate_key": _candidate_key(item),
+                        "final_rank": rank,
+                        "fused_score": fused_score,
+                        "vector_cosine": cosine_scores.get(pool_index, 0.0),
+                        "admission_probe_ids": admission_paths.get(
+                            _candidate_key(item), []
+                        ),
+                    }
+                    for rank, (item, (pool_index, fused_score)) in enumerate(
+                        zip(ranked, blended),
+                        1,
+                    )
+                ]
+            )
+            trace.event(
+                "hybrid_ranking",
+                "ok",
+                run_count=len(runs),
+                candidate_count=len(ranked),
+            )
+        except Exception:
+            pass
+
     suffix = "_v" if expanded else ""
     bm_tag = "_bm25" if bm25 is not None else "_nobm25"
-    method = f"hybrid_{len(runs)}{bm_tag}{suffix}"
+    link_tag = f"_links{linked_admitted}" if linked_admitted else ""
+    method = f"hybrid_{len(runs)}{bm_tag}{suffix}{link_tag}"
     return ranked, scores, method
 
 
@@ -531,14 +775,15 @@ def recall_hybrid(
     limit: int | None = None,
     tier: str = "zero_llm",
     top_k: int | None = None,
+    trace: Any | None = None,
+    evidence_needs: tuple[str, ...] | list[str] = (),
 ) -> tuple[list[dict], str]:
     """BM25 + dense + RRF hybrid recall with optional tiered LLM escalation.
 
-    Default tier is ``zero_llm`` (83.2% R@1 on LongMemEval_S at $0/query).
-    The ``filter`` and ``flagship`` tiers are benchmark-tuned and experimental.
-    It routes by query type, fuses BM25 and dense
-    retrieval with RRF, and optionally reranks the top candidates through
-    a cheap filter LLM or a flagship cloud model.
+    Default tier is ``zero_llm`` and uses no retrieval LLM. The ``filter`` and
+    ``flagship`` tiers are experimental. The function routes by query type,
+    fuses BM25 and dense retrieval with RRF, and can optionally rerank the top
+    candidates through a filter LLM or a flagship cloud model.
 
     Parameters
     ----------
@@ -593,7 +838,13 @@ def recall_hybrid(
 
     # --- Stage 1: hybrid retrieval ---
     ranked, scores, s1_method = _hybrid_stage1(
-        memory, query, user_id, cfg, pool_size=min(limit, 100),
+        memory,
+        query,
+        user_id,
+        cfg,
+        pool_size=min(limit, 100),
+        trace=trace,
+        evidence_needs=evidence_needs,
     )
     if not ranked:
         return [], s1_method

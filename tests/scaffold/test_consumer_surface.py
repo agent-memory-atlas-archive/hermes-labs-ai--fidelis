@@ -43,7 +43,7 @@ def test_mcp_server_module_imports():
     assert hasattr(mcp_server, "main")
     tool_names = {t["name"] for t in mcp_server.TOOLS}
     assert "fidelis_recall" in tool_names
-    assert "fidelis_query" in tool_names
+    assert "fidelis_get" in tool_names
     assert "fidelis_health" in tool_names
 
 

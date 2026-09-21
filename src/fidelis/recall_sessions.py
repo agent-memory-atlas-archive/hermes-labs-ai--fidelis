@@ -9,13 +9,45 @@ data is role-structured (user+assistant turns), not flat strings.
 Provides:
     query_sessions(query, top_k=3) -> list[SessionResult]
     query_both(query, atomic_k=3, session_k=3) -> BothResult
+
+`query_sessions` scans the whole session corpus, so it is also where a
+natural reference to recent work has to be honoured: a same-day or explicitly
+named record must not be cut by `top_k` before anything downstream can rank it.
+Pass a `SessionReference` (or let one be parsed from the query) to fold the
+deterministic identity and time-window adjustments into the score.
 """
 from __future__ import annotations
 
 import json
 import math
+import re
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime
+
+from fidelis.session_reference import (
+    SessionReference,
+    meets_evidence_floor,
+    parse_session_reference,
+    reference_adjustment,
+    sort_epoch,
+)
+
+
+def session_evidence_text(matched_chunk: str, turns: list[dict]) -> str:
+    """Bounded text used to judge whether a session is lexical evidence.
+
+    Defined here so retrieval and the shared ranker judge a record on exactly
+    the same text; two definitions would let one admit what the other rejects.
+    """
+    parts = [matched_chunk or ""]
+    for turn in turns or []:
+        content = str(turn.get("content") or "")
+        if content:
+            parts.append(content)
+        if sum(len(part) for part in parts) > 4_000:
+            break
+    return "\n".join(parts)[:4_000]
 
 OLLAMA_URL = "http://localhost:11434"
 EMBED_MODEL = "nomic-embed-text"
@@ -95,6 +127,25 @@ def _bm25_score(query_tokens: set[str], doc_text: str) -> float:
     return score
 
 
+def _literal_turn_match(turns: list[dict], normalized_query: str) -> str:
+    """Return a compact turn excerpt when the full stored turn has the phrase."""
+    if len(normalized_query) < 8:
+        return ""
+    phrase_pattern = re.compile(
+        r"\s+".join(re.escape(part) for part in normalized_query.split()),
+        flags=re.IGNORECASE,
+    )
+    for turn in turns:
+        content = str(turn.get("content") or "")
+        match = phrase_pattern.search(content)
+        if match is None:
+            continue
+        role = str(turn.get("role") or "unknown").title()
+        start = max(0, match.start() - 200)
+        return f"{role}: {content[start:start + 500]}"
+    return ""
+
+
 def _cosine(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
@@ -116,6 +167,22 @@ class SessionResult:
     matched_chunk: str        # the specific turn-pair that matched
     score: float
     turns: list[dict] = field(default_factory=list)   # full turn list
+    session_source: str = "claude_code"
+    capture_completeness: str = "NATIVE_MESSAGES"
+    action_count: int = 0
+    action_trace_level: str = "NONE"
+    source_locator: str = ""
+    match_reasons: tuple[str, ...] = ()
+    reference_applied: bool = False
+    # The similarity score before any reference adjustment. None means no
+    # adjustment was made, in which case `score` already is the semantic score.
+    base_score: float | None = None
+
+    @property
+    def semantic_score(self) -> float:
+        """Similarity-only score, for consumers that want the historical
+        ranking regardless of whether a reference was applied."""
+        return self.score if self.base_score is None else self.base_score
 
     def to_dict(self) -> dict:
         return {
@@ -126,6 +193,13 @@ class SessionResult:
             "turn_count": self.turn_count,
             "matched_chunk": self.matched_chunk,
             "score": round(self.score, 4),
+            "session_source": self.session_source,
+            "capture_completeness": self.capture_completeness,
+            "action_count": self.action_count,
+            "action_trace_level": self.action_trace_level,
+            "source_locator": self.source_locator,
+            "match_reasons": list(self.match_reasons),
+            "base_score": round(self.semantic_score, 4),
         }
 
 
@@ -149,7 +223,14 @@ def _get_collection():
     return client.get_collection("cogito_main")
 
 
-def query_sessions(query: str, top_k: int = 3) -> list[SessionResult]:
+def query_sessions(
+    query: str,
+    top_k: int = 3,
+    *,
+    reference: SessionReference | None = None,
+    now: datetime | None = None,
+    tzinfo=None,
+) -> list[SessionResult]:
     """
     Retrieve top_k session memories most relevant to query.
 
@@ -158,10 +239,29 @@ def query_sessions(query: str, top_k: int = 3) -> list[SessionResult]:
     2. For each session, chunk into turn-pairs
     3. Score each chunk: 0.7 * cosine_sim + 0.3 * bm25_norm
     4. Best chunk score represents the session
-    5. Return top_k sessions ranked by best chunk score
+    5. Apply the deterministic reference adjustment (explicit session id, and
+       the requested time window against the stored timestamps) when a
+       reference is supplied
+    6. Return top_k sessions ranked by adjusted score
+
+    `reference` defaults to None, which keeps the historical semantic-only
+    ranking for existing callers. Pass one (or `now` to have one parsed from the
+    query) to make "today", "yesterday", an explicit date, or a literal session
+    id decide the order. `tzinfo` alone only chooses the timezone dates are
+    compared in; it does not by itself switch on reference ranking.
+
+    Selection is evidence-first: a record that carries lexical evidence for the
+    query is never displaced from the `top_k` by one that does not. Without that
+    rule the time-window term (a 1.25 spread) would dominate the similarity
+    score's much narrower range and could evict the very record the caller
+    described — for instance whenever they say "today" about work from last
+    night. The window then orders the records that survive, so it decides
+    ranking without deciding retrieval.
     """
     if not query.strip():
         return []
+    if reference is None and now is not None:
+        reference = parse_session_reference(query, now=now, tzinfo=tzinfo)
 
     col = _get_collection()
 
@@ -180,6 +280,7 @@ def query_sessions(query: str, top_k: int = 3) -> list[SessionResult]:
 
     query_vec = _embed_query(query)
     query_tokens = set(query.lower().split())
+    normalized_query = " ".join(query.lower().split())
 
     candidates: list[tuple[float, SessionResult]] = []
 
@@ -216,9 +317,35 @@ def query_sessions(query: str, top_k: int = 3) -> list[SessionResult]:
             bm25_norm = min(bm25 / 5.0, 1.0)  # rough normalisation
 
             chunk_score = 0.7 * cos + 0.3 * bm25_norm  # calibrated: 70/30 cosine/bm25 blend from recall_b experiments
+            # A literal phrase is stronger evidence than a nearby embedding in a
+            # large corpus. Keep semantic ranking unchanged when there is no
+            # literal match, but make exact remembered wording reliably findable.
             if chunk_score > best_score:
                 best_score = chunk_score
                 best_chunk = chunk
+
+        literal_turn = _literal_turn_match(turns, normalized_query)
+        if literal_turn:
+            best_score += 1.0
+            best_chunk = literal_turn
+
+        base_score: float | None = None
+        match_reasons: tuple[str, ...] = ()
+        has_evidence = True
+        if reference is not None:
+            base_score = best_score
+            delta, match_reasons = reference_adjustment(
+                reference,
+                timestamp=meta.get("end_ts") or meta.get("start_ts") or "",
+                identifiers=(session_id,),
+                tzinfo=tzinfo,
+            )
+            best_score += delta
+            has_evidence = bool(
+                reference.matches_identity(session_id)
+            ) or meets_evidence_floor(
+                reference, session_evidence_text(best_chunk, turns)
+            )
 
         sr = SessionResult(
             session_id=session_id,
@@ -229,11 +356,28 @@ def query_sessions(query: str, top_k: int = 3) -> list[SessionResult]:
             matched_chunk=best_chunk[:500],
             score=best_score,
             turns=turns,
+            session_source=meta.get("session_source", "claude_code"),
+            capture_completeness=meta.get("capture_completeness", "NATIVE_MESSAGES"),
+            action_count=int(meta.get("action_count", 0) or 0),
+            action_trace_level=meta.get("action_trace_level", "NONE"),
+            source_locator=meta.get("source_locator", ""),
+            match_reasons=match_reasons,
+            reference_applied=reference is not None,
+            base_score=base_score,
         )
-        candidates.append((best_score, sr))
+        candidates.append((best_score, has_evidence, sr))
 
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    return [sr for _, sr in candidates[:top_k]]
+    # Stable sorts, least significant key first: session id, then newest
+    # evidence, then score — so the order never depends on the store's scan
+    # order. `has_evidence` is applied last and therefore outranks score: it
+    # gates which records may occupy the top_k at all.
+    candidates.sort(key=lambda item: item[2].session_id)
+    candidates.sort(
+        key=lambda item: sort_epoch(item[2].end_ts or item[2].start_ts), reverse=True
+    )
+    candidates.sort(key=lambda item: round(item[0], 6), reverse=True)
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    return [sr for _, _, sr in candidates[:top_k]]
 
 
 def query_both(query: str, atomic_k: int = 3, session_k: int = 3) -> BothResult:

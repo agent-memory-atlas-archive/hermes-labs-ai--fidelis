@@ -1,6 +1,6 @@
 {
   "title": "fidelis: zero-LLM agent memory for Claude Code and AI agents",
-  "description": "fidelis is zero-LLM agent memory for Claude Code and AI agents: a local-first memory layer whose default retrieval path uses BM25, dense vectors, and reciprocal rank fusion with no LLM call. It returns your original passages verbatim instead of paraphrasing and runs fully local. Benchmarked on LongMemEval-S.",
+  "description": "Local agent memory with verbatim records, correction history, and time-aware retrieval. Default MCP recall uses local embeddings without a generative LLM. Package: fidelis-memory.",
   "upload_type": "software",
   "access_right": "open",
   "license": "MIT",

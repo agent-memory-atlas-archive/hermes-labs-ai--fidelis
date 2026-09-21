@@ -3,7 +3,7 @@
 The Fidelis QA scaffold technique: a versioned, bounded, idempotent system-prompt
 wrapper that lifts QA accuracy on retrieval-augmented questions without modifying
 the underlying LLM. Composes with Fidelis retrieval (BM25 + temporal-boost +
-runtime-escalate, R@1 = 83.2% zero-LLM at $0/q) and the user's existing LLM.
+runtime-escalate, zero-LLM retrieval by default) and the user's existing LLM.
 
 Public API:
     wrap_system_prompt(qtype, top_score=None) -> str

@@ -48,7 +48,7 @@ class _BuggyScoreMemory:
         class _Hit:
             def __init__(self, text, distance):
                 self.payload = {"data": text}
-                self.score = distance  # cosine distance ∈ [0, 2]
+                self.score = 1 / (1 + distance)  # mem0 Chroma similarity
 
         self.vector_store.search.return_value = [
             _Hit("the actual match", 0.2),  # high similarity → score 0.9
@@ -140,7 +140,7 @@ def test_query_distance_to_similarity_conversion():
     memories = response.get("memories", [])
     # _BuggyScoreMemory returns distances 0.2, 1.6, 1.8
     # → similarities 0.9, 0.2, 0.1 (rounded to 3dp)
-    expected = [0.9, 0.2, 0.1]
+    expected = [1 / 1.2, 1 / 2.6, 1 / 2.8]
     actual = [m["score"] for m in memories]
     for got, want in zip(actual, expected):
         assert abs(got - want) < 0.01, f"expected ~{want}, got {got}"

@@ -13,7 +13,7 @@ product code:
 
 | Capability | Surface | Provided by |
 |---|---|---|
-| `mcp` | `fidelis_orient`, `fidelis_recall`, `fidelis_query`, `fidelis_health` | `.mcp.json` |
+| `mcp` | `fidelis_recall`, `fidelis_store`, `fidelis_correct`, `fidelis_get`, `fidelis_recent`, `fidelis_health` | `.mcp.json` |
 | `skill` | `fidelis-memory` | `skills/fidelis-memory/SKILL.md` |
 
 These are separate claims. A loaded skill does not prove the MCP server
@@ -26,9 +26,9 @@ The MCP server is a thin stdio client. It reads from a local `fidelis-server`
 over HTTP on `127.0.0.1:19420` and holds no store of its own. Start one first:
 
 ```bash
-uvx --from "fidelis-memory==0.2.0" fidelis init     # install the background service
+uvx --from "fidelis-memory==0.3.0rc1" fidelis init     # install the background service
 # or, in the foreground:
-uvx --from "fidelis-memory==0.2.0" fidelis server
+uvx --from "fidelis-memory==0.3.0rc1" fidelis server
 ```
 
 `uvx` comes from [uv](https://docs.astral.sh/uv/). Without a running server the
@@ -42,10 +42,10 @@ printf '%s\n%s\n%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-  | uvx --from "fidelis-memory==0.2.0" fidelis mcp serve
+  | uvx --from "fidelis-memory==0.3.0rc1" fidelis mcp serve
 ```
 
-The second response lists the four tools above.
+The second response lists the six tools above.
 
 ## Configuration
 

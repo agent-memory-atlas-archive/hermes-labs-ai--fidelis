@@ -1,520 +1,152 @@
-# Fidelis Memory
-
 <!-- mcp-name: io.github.hermes-labs-ai/fidelis-memory -->
 
 <p align="center">
-  <img src="assets/fidelis-memory-artwork.jpg" width="420" alt="Fidelis Memory mascot — a golden retriever safeguarding memory" />
+  <img src="https://raw.githubusercontent.com/hermes-labs-ai/fidelis/v0.3.0rc1/assets/fidelis-memory-artwork.jpg" width="420" alt="Fidelis Memory, the golden retriever mascot" />
 </p>
 
-## Local-first, zero-LLM memory for Codex, Claude Code, and AI agents.
+# Fidelis Memory
 
-**83.2% R@1 in a checked-in 470-question LongMemEval-S retrieval run. A separate checked-in run answered 317 of 434 graded questions correctly (73.0%, Wilson 95% CI [68.7%, 77.0%]) with an LLM reading Fidelis retrieval. The default retrieval path itself makes no LLM call.**
+**Agent memory that brings back the source, not another summary.**
 
-Stop re-explaining context to your agent. fidelis returns your original notes verbatim through a local-first service. Your agent already calls an LLM to think; it should not need another one just to remember. Designed for developers. The default zero-LLM retrieval path does not send memory content to an LLM. The documented `fidelis init` service configuration also disables mem0 and Chroma telemetry. That can reduce third-party data exposure, but deployments still own their security and compliance assessment.
+Fidelis is a local memory and retrieval service for Codex, Claude Code, and other AI agents. Keep your notes available across sessions and retrieve stored text without generative rewriting.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](#known-limitations-v010)
+A summary can preserve "we tried the migration" while dropping why it failed, what it affected, and what must change before trying again. Fidelis's verbatim ingestion path keeps those details in the stored note instead of requiring a generated fact to replace it.
+
+[![PyPI pre-release](https://img.shields.io/badge/PyPI-0.3.0rc1-blue)](https://pypi.org/project/fidelis-memory/0.3.0rc1/)
 [![CI](https://github.com/hermes-labs-ai/fidelis/actions/workflows/ci.yml/badge.svg)](https://github.com/hermes-labs-ai/fidelis/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/fidelis-memory)](https://pypi.org/project/fidelis-memory/)
-[![Official MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-5b5bd6)](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.2.0)
-[![Made by Hermes Labs](https://img.shields.io/badge/made%20by-Hermes%20Labs-purple)](https://hermes-labs.ai)
+[![Python](https://img.shields.io/pypi/pyversions/fidelis-memory)](https://pypi.org/project/fidelis-memory/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-```
-your notes / sessions
-       ↓
-local memory store      (~/.cogito/, fully local)
-       ↓
-fidelis retrieval       (BM25 + dense + RRF, no LLM)
-       ↓
-original passages       (verbatim, never rephrased)
-       ↓
-Codex / Claude Code / your agent
-```
-
-What fidelis is:
-
-- **model-API independent by default** - the default retrieval path makes no model API call; local compute and storage still have costs
-- **private** - local memory store by default
-- **faithful** - original stored passages returned, not paraphrases
-- **measured** - checked-in LongMemEval-S retrieval and QA artifacts are linked below
-- **installable** - documented MCP paths for Codex, Claude Code, GitHub Copilot CLI, Gemini CLI, and OpenClaw
-
-Fidelis is deliberately narrower than a hosted memory platform. Check the
-[user-fit matrix](docs/user-fit.md) before installing: it names the workflows
-0.2.0 supports, the prerequisites it assumes, and the cases it does not yet
-serve.
-
----
-
-## Registries
-
-- [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.2.0) —
-  `io.github.hermes-labs-ai/fidelis-memory`, currently registered at version
-  0.2.0.
-- [Glama MCP server directory](https://glama.ai/mcp/servers/hermes-labs-ai/fidelis) —
-  independent third-party server listing.
-
-## Docker / Glama
-
-`docker build .` runs the MCP stdio server (`fidelis mcp serve`) by default —
-what a registry build/inspector (e.g. Glama) talks `initialize` / `tools/list`
-to — and needs no Ollama or running `fidelis-server`. To run the HTTP memory
-server in a container instead, set `FIDELIS_ENTRYPOINT=http` (see
-`docker-compose.yml` for the full stack including Ollama).
+[Quickstart](#quickstart) · [Connect your agent](#connect-your-agent) · [How it works](#how-it-works) · [Benchmarks](#benchmarks) · [Documentation](#documentation)
 
 ## Quickstart
 
-> **Platform support:** macOS or Linux (Windows not yet supported). Install Ollama via
-> [Homebrew](https://brew.sh) on macOS, or the [Ollama Linux install](https://ollama.com/download)
-> on Linux. See [Requirements](#requirements) for the full prerequisite list.
+You need **Python 3.10+, macOS or Ubuntu, and Ollama running locally**. Ubuntu service installation uses systemd. Install [Ollama](https://docs.ollama.com/quickstart) first; if its server is not running, start `ollama serve` in another terminal. This walkthrough needs no model API key.
+
+### 1. Install and start Fidelis
 
 ```bash
-# 0. one-time: Ollama + the local embedder (~280 MB)
-brew install ollama && ollama serve &
 ollama pull nomic-embed-text
 
-# 1. install Fidelis Memory from PyPI
-python3 -m pip install "fidelis-memory==0.2.0"
-fidelis init                  # background service (launchd / systemd)
-fidelis watch ~/notes         # auto-ingests markdown
-fidelis mcp install --client codex   # or omit for Claude Code
-fidelis mcp serve             # runs the MCP server over stdio
-# Restart your agent client. Memory is on.
+python3 -m venv ~/.venvs/fidelis
+source ~/.venvs/fidelis/bin/activate
+python3 -m pip install "fidelis-memory[hybrid]==0.3.0rc1"
+
+fidelis init
 ```
 
-Verify the installed release and the local service before configuring a client:
+The `hybrid` extra adds BM25 keyword search. `fidelis init` installs the background memory service using this Python environment, so keep the environment in place. The package is **`fidelis-memory`**; the command is **`fidelis`**.
+
+### 2. Store a note and retrieve it
 
 ```bash
-python3 -c 'import fidelis; print(fidelis.__version__)'
-# expected: 0.2.0
-fidelis health
-# expected prefix: status: ok  |  memories:
+demo_dir=$(mktemp -d)
+cat > "$demo_dir/atlas.md" <<'NOTE'
+Atlas billing migration, 2026-09-20:
+Duplicate charges appeared in staging. Rolled back.
+Do not retry until the idempotency fix is verified.
+NOTE
+
+fidelis watch "$demo_dir" --once
+fidelis recall-hybrid "Atlas billing migration retry condition" --tier zero_llm
 ```
 
-Then verify one real retrieval without relying on a fixed memory count:
+**Success means the returned text includes both the rollback and the retry condition.** The command retrieves stored text; it does not generate an answer. Scores and ordering depend on your store.
 
-```bash
-mkdir -p /tmp/fidelis-verify
-printf '%s\n' 'Fidelis verification phrase: amber heron.' > /tmp/fidelis-verify/note.md
-fidelis watch /tmp/fidelis-verify --once
-fidelis query 'amber heron'
-# success: the result contains "Fidelis verification phrase: amber heron."
-```
+For your own notes, run `fidelis watch ~/notes --once`. Omit `--once` to keep watching in a separate terminal. The watcher ingests Markdown and text files, not every conversation in your agent clients.
 
-Using Gemini CLI? After the local prerequisites and `fidelis init`, install
-the native v0.2.0 extension directly:
+Trouble retrieving? Run `fidelis health` and check that Ollama is running with `nomic-embed-text` available. A responding health endpoint alone does not prove that ingestion and retrieval work.
 
-```bash
-gemini extensions install https://github.com/hermes-labs-ai/fidelis --ref=v0.2.0
-```
+## Connect your agent
 
-The extension launches the released MCP package through `uvx` and includes the
-[`GEMINI.md`](GEMINI.md) context file. [See the Gemini CLI extension details](#gemini-cli-extension).
+After the local retrieval works, register Fidelis with the client you use:
 
-> **Package-name note:** install Hermes Labs' package as `fidelis-memory`.
-> The import name and CLI remain `fidelis`. The separate PyPI project named
-> `fidelis` belongs to [NGdust/fidelis](https://github.com/NGdust/fidelis).
+| Client | Install command |
+| --- | --- |
+| Codex | `fidelis mcp install --client codex` |
+| Claude Code | `fidelis mcp install` |
+| GitHub Copilot CLI | `fidelis mcp install --client copilot` |
+| Gemini CLI | `fidelis mcp install --client gemini` |
+| OpenClaw | `fidelis mcp install --client openclaw` |
 
-Linux users swap `brew install ollama` for the equivalent install from [ollama.com](https://ollama.com). [See Requirements](#requirements).
+Restart your client, then try:
 
-Fidelis Memory 0.2.0 is the version currently published in the
-[official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hermes-labs-ai%2Ffidelis-memory/versions/0.2.0)
-as `io.github.hermes-labs-ai/fidelis-memory`. Registry-aware clients can launch
-the matching server directly from PyPI:
+> Use Fidelis to retrieve my Atlas billing migration note. What must happen before we retry? Quote the relevant text.
 
-```bash
-uvx --from "fidelis-memory==0.2.0" fidelis mcp serve
-```
+Fidelis exposes six MCP tools: `fidelis_recall`, `fidelis_store`, `fidelis_correct`, `fidelis_get`, `fidelis_recent`, and `fidelis_health`. Your agent decides when to call them. Installing the integration does not guarantee automatic recall on every turn. See the [technical reference](docs/full-reference.md) for client prerequisites and configuration.
 
-This starts the MCP stdio process; run `fidelis init` first when the local
-Fidelis service and store have not already been configured. Version 0.0.94
-introduced supported Codex MCP installation and context-sensitive orientation;
-0.0.96 added the independently discoverable registry release; 0.0.97 was the
-first tagged release that carried the Gemini CLI extension manifest; 0.1.0
-established the first cross-client product contract; and 0.2.0 packages the
-safer service startup and installation behavior described below.
+**MCP update in 0.3.0rc1:** recall, recent results, and correction chains return full stored text; the old silent 300-character previews are removed. Corrections retain superseded records, and recall supports validity dates and historical views. Replace old `fidelis_query` calls with `fidelis_recall` and restart clients to refresh their tool lists. See the [upgrade and rollback notes](docs/releases/0.3.0rc1.md).
 
-## What you notice immediately
+## Why keep the source?
 
-After the four commands above, the next time you open Codex or Claude Code:
+Summaries are useful for navigating a long history. They can also leave out information that becomes important to a later question. Once the summary is all that remains, retrieval cannot recover what was discarded.
 
-- It stops asking you to repeat context you already wrote down.
-- You can ask "what did we decide last week about auth?" - and the answer cites your actual decision, not a generic OAuth lecture.
-- Architecture rationale you wrote in a markdown file two months ago surfaces when relevant.
-- Your project context carries across sessions instead of resetting at every new conversation.
-- Failed migration notes, naming conventions, founder voice memos - all queryable in your agent's normal flow.
+Fidelis is built for work where you need to revisit the evidence:
 
-Most of fidelis's value is *not* the benchmark; it's not having to explain the same thing twice.
+- **Decisions and constraints:** recover the rationale, exceptions, and exact conditions in a saved note.
+- **Failed approaches:** retrieve what broke and what must change before another attempt.
+- **Work across sessions:** make your saved project context accessible to different agent clients on the same machine.
 
-## Most AI memory systems rewrite your notes
+The principle is simple: **use derived representations to find evidence, not to replace it.**
 
-Most memory systems rephrase content on the way out. The specific fact gets summarized into something general. fidelis solves this structurally - there is no LLM in the default retrieval path, so the store returns exactly what you put in.
-
-You store:
+## How it works
 
 ```text
-auth tokens expire after 3600 seconds.
-The 3600s window is non-configurable in our current contract.
+Your Markdown or text files
+          |
+   Verbatim ingestion
+          |
+   Local memory store
+          |
+   Retrieve and rank candidates
+          |
+   Stored text for your agent
 ```
 
-A lossy memory layer may return:
+Default MCP recall uses fast local vector retrieval without a generative LLM. Explicit `mode: "thorough"` selects the hybrid path. The hybrid retrieval path combines keyword search, dense-vector similarity, and reciprocal rank fusion. Its default `zero_llm` tier does not call a generative LLM. Local embeddings are still required.
 
-```text
-authentication has a configurable timeout
-```
+Optional model-assisted tiers can help select candidates. Their accepted output is a list of candidate numbers. Code resolves those numbers to stored text rather than returning the model's prose as memory.
 
-fidelis returns:
+Fidelis builds on mem0 and ChromaDB for storage and adds its retrieval, fidelity, service, and agent-integration layers.
 
-```text
-auth tokens expire after 3600 seconds.
-The 3600s window is non-configurable in our current contract.
-```
+### The fidelity boundary
 
-The non-configurable qualifier survives. So does every other detail you wrote down.
+The source-preserving paths include `fidelis watch`, `fidelis store`, `fidelis add`, and HTTP `POST /store`. Explicit `fidelis add --extract` and `fidelis seed` use extraction or curation and can transform input before storage. Snapshots are derived summaries, not source evidence.
 
-## What this enables in Codex, Claude Code, GitHub Copilot CLI, Gemini CLI, and OpenClaw
+Fidelity means preserving the text supplied through the verbatim path. It does not prove that the text is true, current, complete, or the original record of an event. Store only a summary and only that summary can be recovered. Full provenance tracking is not a release guarantee.
 
-Once `fidelis mcp install --client codex`, `--client copilot`, `--client gemini`, `--client openclaw`, or the default Claude install is run, ask your agent:
-
-- *"What did we decide about auth?"*
-- *"What failed last time we tried this migration?"*
-- *"Which billing constraint was non-configurable?"*
-- *"What did I say about Sarah's onboarding flow?"*
-
-The MCP `fidelis_recall` tool gives the agent the original passages before it composes an answer, not paraphrased summaries. The answer can stay grounded in what you wrote, with the qualifiers intact.
-
-> **fidelis retrieves memory without an LLM. Your agent still uses its normal LLM to answer using the retrieved context.** "Zero-LLM" applies to the memory hot path, not to your agent.
-
-### GitHub Copilot CLI
-
-Copilot CLI loads MCP servers from `mcp-config.json` in its configuration
-directory (`~/.copilot` by default, or `$COPILOT_HOME`). Fidelis writes the
-documented stdio entry there atomically, backing up any existing file and
-leaving other servers untouched:
-
-```bash
-fidelis mcp install --client copilot     # writes ~/.copilot/mcp-config.json
-copilot                                  # restart, then /mcp list shows "fidelis"
-                                         # /mcp show fidelis lists its tools
-fidelis mcp uninstall --client copilot   # removes only the fidelis entry
-```
-
-Use `--settings /path/to/mcp-config.json` to target a different file. The
-`copilot` binary is not required at install time; if you prefer the host CLI,
-the equivalent registration is
-`copilot mcp add fidelis -- "$(python3 -c 'import sys;print(sys.executable)')" "$(python3 -c 'import fidelis.mcp_cmd as m;print(m.MCP_SERVER_FILE)')"`.
-Copilot does not currently expose a hook or automatic-recall mechanism to
-third-party servers, so recall happens when the agent calls the
-`fidelis_recall`, `fidelis_orient`, or `fidelis_health` tools.
-
-### Gemini CLI
-
-Gemini CLI has native MCP management — `gemini mcp add|remove|list`, shipped
-in v0.1.19 — and Fidelis registers itself through it rather than editing
-`settings.json`. That matters: Gemini reads `settings.json` as
-JSON-with-comments and its own writer round-trips your `//` and `/* */`
-comments. A rewrite by Fidelis would silently delete them.
-
-```bash
-fidelis mcp install --client gemini      # gemini mcp add → ~/.gemini/settings.json
-gemini                                   # restart, or run /mcp reload in a live session
-gemini mcp list                          # shows "fidelis" and whether it connects
-fidelis mcp uninstall --client gemini    # gemini mcp remove, verified
-```
-
-`--scope project` targets `./.gemini/settings.json` instead of the default
-`--scope user` (`~/.gemini/settings.json`); Fidelis refuses `--scope project`
-in your home directory, where Gemini collapses the two to the same file.
-Requires Gemini CLI v0.1.19 or newer on `PATH`, and an auth method already
-configured — Gemini refuses every `gemini mcp` subcommand until one is.
-
-Because `gemini mcp add` overwrites a same-named entry without asking and
-`gemini mcp remove` exits 0 even when the name is absent, Fidelis reads the
-targeted `settings.json` back after every run. It refuses to touch a `fidelis`
-entry it does not recognize (`--force` overrides), and reports a silent no-op
-or an unexpected entry as a failure rather than as success. Unrelated servers,
-their `env` secrets, other settings keys, and the file's permission bits are
-left as they were.
-
-Recall happens when the agent calls the `fidelis_recall`, `fidelis_orient`, or
-`fidelis_health` tools.
-
-### OpenClaw
-
-OpenClaw keeps outbound MCP servers under `mcp.servers` in its JSON5 config
-(`~/.openclaw/openclaw.json`, or `$OPENCLAW_CONFIG_PATH`). Because JSON5 allows
-comments and trailing commas, Fidelis neither writes that file nor parses it:
-it delegates every write to the documented `openclaw mcp add` CLI, and asks
-OpenClaw's own read-only surface — `openclaw mcp show fidelis --json`, falling
-back to `openclaw mcp list --json` — both before writing and afterwards to
-confirm what landed.
-
-```bash
-fidelis mcp install --client openclaw    # openclaw mcp add fidelis --command … --arg …
-openclaw mcp reload                      # pick up the new server
-openclaw mcp status --verbose            # confirm the saved config
-openclaw mcp doctor fidelis --probe      # verify it connects
-fidelis mcp uninstall --client openclaw  # removes only the fidelis entry
-```
-
-The `openclaw` binary **is** required here, because it owns the write and is the
-only reader that can be trusted with a JSON5 config. Use
-`--settings /path/to/openclaw.json` to target a different config; Fidelis passes
-it as `$OPENCLAW_CONFIG_PATH` on every delegated call, reads included, so the
-state it reads back is the state of the file OpenClaw just wrote. If you prefer
-to run the host CLI yourself, the
-equivalent registration is
-`openclaw mcp add fidelis --command "$(python3 -c 'import sys;print(sys.executable)')" --arg "$(python3 -c 'import fidelis.mcp_cmd as m;print(m.MCP_SERVER_FILE)')"`.
-Install and uninstall refuse to touch an `mcp.servers.fidelis` entry that is not
-ours unless you pass `--force`, and exit non-zero rather than claiming success
-whenever the read-back does not prove the change landed — including when
-OpenClaw cannot report the entry at all, which is treated as unknown, never as
-"nothing there".
-
-## Use cases & ROI
-
-Three concrete reasons teams pick fidelis over hosted memory:
-
-- **Model-API independence for retrieval.** Memory lives on disk and the default retrieval path makes no model API call. Your agent still consumes its normal context and model resources when answering.
-- **Local data boundary.** The default zero-LLM path keeps notes and retrieval on the local machine, reducing third-party processor exposure. This architecture does not by itself confer SOC 2 or HIPAA compliance.
-- **Team context.** Agents that remember historical decisions, naming conventions, failed migrations, and the *qualifiers* on those decisions. The non-configurable detail you wrote down two months ago surfaces when relevant, in the founder's voice, not paraphrased.
-
-## How it fits
-
-The diagram is at the top. Codex and Claude Code are the fastest paths to value. The retrieval engine is agent-agnostic - pair it with any LLM client. Codex registration uses its supported `codex mcp` CLI, and the resulting server configuration is shared by the Codex desktop app, CLI, and IDE extension on that host.
+With local Ollama, the quickstart keeps storage and retrieval local. Your agent may send retrieved text to its model provider when answering. Optional LLM features follow their configured data boundaries.
 
 ## Benchmarks
 
-Checked-in LongMemEval-S observations; these are local project measurements,
-not independent replications.
+The redesigned default zero-LLM retrieval path completed a fresh LongMemEval-S run of **470 questions on September 21, 2026**, with zero errors. The [results](bench/results-default-0.3.0rc1.json) and [methodology](bench/DEFAULT-RETRIEVAL-METHODOLOGY.md) record the source snapshot, corpus construction, metrics, and limitations.
 
-| Metric | Value |
-|---|---|
-| Retrieval R@1 | **83.2%** |
-| Retrieval R@5 | **98.3%** |
-| End-to-end QA accuracy | **73.0%** (317/434 graded questions), Wilson 95% CI [68.7%, 77.0%] |
-| Retrieval-time model API calls | **0** on the default stage-1 path |
+These are whole-session retrieval measurements, not answer accuracy or a matched comparison with competitors. Historical chunked retrieval and QA scores do not measure this redesign and are not reused as release evidence. Full LLM/QA evaluation is post-release work.
 
-Raw evidence: [retrieval aggregate](bench/runs/runP-v35/aggregate.json) ·
-[end-to-end QA summary](experiments/zeroLLM-FLAGSHIP-evidence/SUMMARY.json)
+Fast recall remains the default. Optional thorough hybrid retrieval needs further tuning; that work is deferred beyond this pre-release.
 
-The QA tier wraps your existing LLM with a 140–180-token system prompt - the Fidelis Scaffold. See [`docs/scaffold.md`](docs/scaffold.md).
+## Is Fidelis a fit?
 
-## Verify the zero-LLM claim yourself
+Choose Fidelis when your working context lives in local notes, you want to retrieve their text rather than replace it with synthesized memory, and you can run a local service.
 
-```bash
-# Unset any LLM API keys for this shell
-unset OPENAI_API_KEY ANTHROPIC_API_KEY DASHSCOPE_API_KEY
+Version 0.3.0rc1 is an early, single-machine pre-release. It is not a hosted team-memory platform. Windows service installation and managed multi-user authorization are not supported contracts. Preserving a past statement also does not make it current: review dates and conflicting records before acting.
 
-# Optional: drop your network. Ollama runs on 127.0.0.1:11434 (loopback).
+See the [user-fit guide](docs/user-fit.md) and [security policy](SECURITY.md) before deploying.
 
-# `recall-hybrid` is the explicit-tier command. zero_llm is the default.
-fidelis recall-hybrid "what did the user say about Sarah" --tier zero_llm
-tail ~/.fidelis/server.log
-```
+## Documentation
 
-The default `zero_llm` tier never makes an outbound LLM call. Optional `--tier filter` and `--tier flagship` modes do call an LLM, but only to select integer pointers - the server dereferences those pointers to the original stored text. The LLM cannot rephrase memory content.
+| Need | Start here |
+| --- | --- |
+| Commands, HTTP API, configuration, and client setup | [Technical reference](docs/full-reference.md) |
+| Supported workflows and limitations | [User-fit guide](docs/user-fit.md) |
+| Optional guidance for an LLM reading retrieved evidence | [QA scaffold](docs/scaffold.md) |
+| Release history | [Changelog](CHANGELOG.md) |
+| Contributing or reporting security issues | [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) |
 
-### Context-sensitive orientation (MCP)
+## Contributing
 
-The bundled MCP server also exposes `fidelis_orient`. It recognizes when a
-turn invokes prior work—even when it is a statement such as “I need to
-remember our Fidelis work”—and selects a bounded evidence lane for identity,
-maintenance, conceptual reuse, comparison, decisions, historical state, or
-current state. The returned orientation is a derived index; retrieved records
-remain verbatim evidence with their existing IDs and metadata. Unrelated turns
-explicitly abstain without calling the memory server.
-
-### Gemini CLI extension
-
-Fidelis is also packaged as a native
-[Gemini CLI extension](https://geminicli.com/docs/extensions/): the
-`gemini-extension.json` at the repository root registers the same stdio MCP
-server that the [MCP Registry](#quickstart) entry launches, plus a `GEMINI.md`
-context file that tells the model when to call `fidelis_orient` and
-`fidelis_recall`. It needs [`uv`](https://docs.astral.sh/uv/) on `PATH` and a
-running Fidelis server (`fidelis init`, see [Requirements](#requirements)),
-but not a manual `pip install`:
-
-```bash
-gemini extensions install https://github.com/hermes-labs-ai/fidelis
-gemini extensions list      # fidelis, with its GEMINI.md and MCP server
-gemini extensions uninstall fidelis
-```
-
-The extension pins `fidelis-memory==0.2.0`; `gemini extensions update fidelis`
-follows the repository's tagged releases. The first launch lets `uvx` download
-the wheel and its dependencies. Gemini CLI 0.32.1 probes `gemini mcp list`
-with a fixed 5-second timeout that ignores the manifest's 60-second `timeout`,
-so that first launch can read *Disconnected*; run
-`uvx --from fidelis-memory==0.2.0 fidelis --help` once to warm the cache,
-after which the row reads *Connected*. If you also register Fidelis with
-`gemini mcp add`, the `settings.json` entry takes precedence over the
-extension's, so the two do not conflict.
-
-## Requirements
-
-- macOS or Linux (Windows not yet supported)
-- Python 3.10+
-- [Ollama](https://ollama.com) running locally with `nomic-embed-text` pulled (~280 MB):
-
-  ```bash
-  brew install ollama && ollama serve &
-  ollama pull nomic-embed-text   # ~280 MB, one-time
-  ```
-
-Once Ollama and the embedding model are available, the quickstart covers the
-full init-to-first-recall path. The default retrieval path needs no memory API
-key.
-
-**Ollama is required to load the memory store and perform retrieval, but not
-to start `fidelis-server` or answer its health check.** The server now binds
-first and loads the store only for a request that needs it. With Ollama
-unreachable, `fidelis health` remains available and reports
-`store_loaded: false`; store-backed requests return a generic `503` rather
-than crashing the process. Start Ollama and pull the embedding model before
-using retrieval or ingestion.
-
-```bash
-python3 -m venv /tmp/fv && source /tmp/fv/bin/activate
-pip install "fidelis-memory==0.2.0"
-python3 -c 'import fidelis; print(fidelis.__version__)'
-# 0.2.0 — installs and imports fine, no Ollama needed for this step
-
-COGITO_OLLAMA_URL=http://127.0.0.1:1 fidelis-server   # Ollama unreachable on purpose
-```
-
-```text
-{"status": "ok", "count": -1, "store_loaded": false, ...}
-```
-
-The package installs and imports cleanly without Ollama. The MCP stdio server
-can also answer protocol initialization and tool-list requests without it.
-`fidelis query`, `fidelis recall-hybrid --tier zero_llm`, ingestion, and other
-memory-backed operations still require the full local Ollama + service stack;
-the "zero-LLM" claim concerns the retrieval path, not its local embedding
-dependency.
-
-## Quick reference
-
-```bash
-fidelis recall "what did the user say about Sarah"
-fidelis query  "Sarah" --limit 5
-fidelis add    "raw text to extract into memories"
-fidelis health
-fidelis seed   ~/memory/   ~/notes/
-```
-
-`fidelis add` normally stores facts produced by the configured extraction
-model. If extraction returns no facts, Fidelis preserves the original input
-verbatim instead of silently losing it. The command still exits 0 because the
-write succeeded, but stdout reports a stable degraded status:
-
-```text
-status=stored degraded=verbatim-fallback-empty-extraction id=<uuid> count=1
-```
-
-Automation that requires successful extraction must inspect `degraded`; exit 0
-means the memory was stored, not necessarily that extraction succeeded. Because
-mem0 does not distinguish a swallowed extractor failure from a legitimate
-zero-fact result, the fallback intentionally favors durability.
-
-Python helper for direct integration:
-
-```python
-from fidelis.augment import augment
-from anthropic import Anthropic
-
-client = Anthropic()
-answer = augment(
-    question="What did I say about Sarah?",
-    qtype="single-session-user",
-    llm_call=lambda system, user: client.messages.create(
-        model="claude-haiku-4-5",  # any current Claude Messages model works
-        system=system,
-        messages=[{"role": "user", "content": user}],
-        max_tokens=512,
-    ).content[0].text,
-)
-```
-
-## What's running on your machine
-
-After `fidelis init`:
-
-- **Service:** `fidelis-server` runs at `http://127.0.0.1:19420` under your OS service manager (launchd on macOS, systemd on Linux). Auto-starts on boot. Logs at `~/.fidelis/server.log`.
-- **Storage:** Chroma + SQLite at `~/.cogito/` (the directory name is preserved from the project's pre-rename codename for v0.0.x compatibility - it will move to `~/.fidelis/` in a later major bump). No data leaves your machine in the default zero-LLM path.
-- **MCP:** after installing for your selected client, Codex or Claude Code sees four tools: `fidelis_recall`, `fidelis_query`, `fidelis_health`, and `fidelis_orient`.
-
-To stop: `fidelis init --uninstall`. To wipe: `rm -rf ~/.cogito ~/.fidelis`.
-
-## Known limitations (v0.2.0)
-
-- **Pre-release.** Python function names and CLI commands may change. Pin the version if you build on it.
-- **Best on macOS Sequoia / Ubuntu 24.04 LTS.** Other OSes likely work but aren't gate-tested.
-- **Direct server launches disable mem0 telemetry by default.** This matches
-  the service installed by `fidelis init` and avoids telemetry exit handlers
-  delaying graceful shutdown. An explicit `MEM0_TELEMETRY=True` still opts in.
-  For the same boundary across Chroma, set `ANONYMIZED_TELEMETRY=False` and
-  `CHROMA_TELEMETRY_DISABLED=True` before a direct launch; `fidelis init`
-  includes all three settings automatically.
-- **Temporal-reasoning and preference questions are the weakest qtypes** in the QA scaffold (TR ~58%, Pref ~37% on the full eval). Single-session and knowledge-update qtypes are strong (95–100%).
-- **The optional LLM tier ("flagship" mode) currently escalates ~80% of queries instead of the intended ~10%** - an 8× cost miss we're transparent about. The default zero-LLM tier is unaffected.
-- **qwen3.5:9b in thinking mode does not reliably follow the literal hedge instruction** in the Fidelis Scaffold. Use Claude, an OpenAI-format API, or non-thinking-mode local models for reliable hedging.
-
-## What this turns into over time
-
-Day 1: drop notes into `~/notes`, run the four commands.
-Day 2: ask your agent about yesterday's decision - the answer cites your original passage.
-Day 7: your agent starts carrying project context across sessions; you stop re-explaining.
-
-Useful for solo builders today; relevant for teams that need memory to stay local tomorrow.
-
-## Fidelis Memory for teams
-
-fidelis is open-source under MIT and free for any use, including commercial. If your team has deployment requirements that the OSS path does not yet cover (centralized memory, multi-namespace isolation, custom authentication), write to **founders@hermes-labs.ai**.
-
-## For technical users
-
-- [`docs/user-fit.md`](docs/user-fit.md) - supported users, prerequisites, and explicit non-fits
-- [`docs/releases/0.2.0.md`](docs/releases/0.2.0.md) - 0.2.0 release scope and release notes
-- [`ROADMAP.md`](ROADMAP.md) - outcome gates beyond 0.2.0
-- [`docs/full-reference.md`](docs/full-reference.md) - full architecture, hybrid recall tiers, local server endpoints, troubleshooting
-- [`docs/scaffold.md`](docs/scaffold.md) - Fidelis Scaffold contract + drift-detection markers
-- [`experiments/zeroLLM-FLAGSHIP-evidence/`](experiments/zeroLLM-FLAGSHIP-evidence/) - raw eval JSONs + machine-readable SUMMARY (per-qtype breakdowns, Wilson CI, F1/F1B baselines)
+Found a missed passage, an unexpected rewrite, or an installation problem? [Open an issue](https://github.com/hermes-labs-ai/fidelis/issues) with a minimal, redacted example. Retrieval regressions, fidelity tests, and documentation fixes are welcome.
 
 ## License
 
-MIT. Built by Hermes Labs (Roli Bosch). Issues + PRs welcome.
-
----
-
-## Also from Hermes Labs
-
-- [lintlang](https://github.com/hermes-labs-ai/lintlang) - Static analysis for AI agent configs, tool descriptions, and system prompts; zero-LLM, deterministic checks built for CI.
-- [zer0dex](https://github.com/hermes-labs-ai/zer0dex) - A local dual-layer memory pattern: a compact markdown index paired with semantic retrieval from a local vector store, queried before each message.
-- [little-canary](https://github.com/hermes-labs-ai/little-canary) - Detects prompt injection by its effect on a sacrificial canary model, returning block/flag/pass before your primary model acts.
-- [quick-gate-js](https://github.com/hermes-labs-ai/quick-gate-js) - A deterministic JS/TS CI quality gate that unifies ESLint, TypeScript, build, and Lighthouse checks into one fail-fast result.
-
----
-
-## About Hermes Labs
-
-Hermes Labs develops open-source reliability, evaluation, memory, and
-runtime-guard tools for AI agents. Fidelis is its local-first memory project.
-Other public software is listed at
-[github.com/hermes-labs-ai](https://github.com/hermes-labs-ai), with research
-artifacts published separately on [Zenodo](https://zenodo.org).
-
-For enterprise deployments and AI-reliability engagements: [roli@hermes-labs.ai](mailto:roli@hermes-labs.ai) · [hermes-labs.ai](https://hermes-labs.ai)
-
-On naming. Hermes Labs is named for Hermes, the Greek messenger god - patron of communication and interpretation, the herald who carries meaning between worlds. The thread to the work: hermeneutics, the theory of interpretation that takes its name from Hermes, is the philosophical anchor for an AI reliability engineering studio whose substrate is linguistic. Not affiliated with NousResearch's Hermes LLM line or their hermes-agent framework - different companies, different work.
-
-Founder: Rolando (Roli) Bosch.
-Site: [hermes-labs.ai](https://hermes-labs.ai)
-Citation: Bosch, R. (2026). Hermes Labs: AI reliability infrastructure for autonomous agents. https://hermes-labs.ai
-
-Quantitative source for the Fidelis claims above: the 470-question
-LongMemEval-S aggregate and Wilson interval in
-[`experiments/zeroLLM-FLAGSHIP-evidence/`](experiments/zeroLLM-FLAGSHIP-evidence/),
-evaluated 2026-04-24.
+[MIT](LICENSE). Built by [Hermes Labs](https://hermes-labs.ai).
