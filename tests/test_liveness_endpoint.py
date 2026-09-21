@@ -123,11 +123,13 @@ def test_stale_success_refreshes_to_degraded_off_path(monkeypatch) -> None:
     first = _invoke_get(handler_cls, "/health")
 
     assert first["status"] == "degraded"
-    deadline = time.monotonic() + 1.0
-    while memory.vector_store.collection.count.call_count < 2 and time.monotonic() < deadline:
-        time.sleep(0.01)
-
+    # A mock call is recorded before the worker publishes its cache result.
+    # Wait for the observable state rather than racing that publication.
+    deadline = time.monotonic() + 5.0
     second = _invoke_get(handler_cls, "/health")
+    while second["count"] != -1 and time.monotonic() < deadline:
+        time.sleep(0.01)
+        second = _invoke_get(handler_cls, "/health")
     assert second["status"] == "degraded"
     assert second["count"] == -1
 
