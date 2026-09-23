@@ -38,13 +38,14 @@ payloads verified; queue remaining and dead-letter counts are both zero.
 | Duplicate requests / new records | 20 / 0 |
 | Correction links expected / found | 12 / 12 |
 | Queued / replayed / remaining / dead-lettered | 16 / 16 / 0 / 0 |
-| HTTP `/store` latency p50 / p95 | 3.363 / 5.845 ms |
-| Restored vector recall latency p50 / p95 (60 queries) | 0.646 / 0.783 ms |
+| HTTP `/store` latency p50 / p95 | 3.044 / 5.503 ms |
+| Restored vector recall latency p50 / p95 (60 queries) | 0.703 / 0.779 ms |
 | Restored Chroma bytes / remaining queue bytes | 1,693,860 / 0 |
-| Restore verifier process peak RSS increase | 37,552,128 bytes |
+| Restore verifier process peak RSS increase | 39,305,216 bytes |
 
-The exact identifiers and correction links are in the JSON artifact rather
-than abbreviated here. Latency, storage, and peak RSS are specific to this
+The exact identifiers, correction links, source commit, and proof-script SHA256
+are in the JSON artifact. The worker refuses to report success if the tracked
+`src/fidelis` tree is dirty. Latency, storage, and peak RSS are specific to this
 machine and bounded sample. This does not establish long-duration uptime,
 production capacity, or resolution of issue #60's store-wide budget. Recall is
 verified through the installed Chroma vector-store API; this proof does not

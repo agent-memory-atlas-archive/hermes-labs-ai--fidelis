@@ -15,9 +15,9 @@
   },
   "commit": "f8055e7ff5e68b90898edf208c1153d5e6cf4ff4",
   "growth_bytes": {
-    "process_peak_rss_after_bytes": 162840576,
-    "process_peak_rss_before_bytes": 125288448,
-    "process_peak_rss_delta_bytes": 37552128,
+    "process_peak_rss_after_bytes": 162119680,
+    "process_peak_rss_before_bytes": 122814464,
+    "process_peak_rss_delta_bytes": 39305216,
     "restored_chroma_store": 1693860,
     "restored_queue": 0,
     "restored_store_plus_queue": 1693860
@@ -358,12 +358,12 @@
   },
   "latency": {
     "restored_vector_recall": {
-      "p50_ms": 0.646,
-      "p95_ms": 0.783
+      "p50_ms": 0.703,
+      "p95_ms": 0.779
     },
     "store_http": {
-      "p50_ms": 3.148,
-      "p95_ms": 11.729
+      "p50_ms": 3.044,
+      "p95_ms": 5.503
     }
   },
   "limitations": [
@@ -372,6 +372,7 @@
     "Recall uses the installed Chroma vector-store search API; it does not validate HTTP /query's separate top_k adapter."
   ],
   "proof": "bounded synthetic sustained-write restart and restore",
+  "proof_script_sha256": "d5c7e6f98697b9a21a8182f4dea1b3906ac9907bafc62a6a0b9d537bded74dc3",
   "recall_queries": 60,
   "restored_exact_texts_verified": 148,
   "scope": {
@@ -379,5 +380,6 @@
     "direct": 120,
     "duplicate_attempts": 20,
     "queued_during_embedding_outage": 16
-  }
+  },
+  "source_tree_clean": true
 }

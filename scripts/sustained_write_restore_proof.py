@@ -114,6 +114,15 @@ def peak_rss_bytes():
 def restore_worker(source, queue, restore, manifest_path):
     """Fresh-process restart, backup, restore, replay, and recall verification."""
     source, queue, restore = Path(source), Path(queue), Path(restore)
+    source_status = subprocess.run(
+        ["git", "status", "--porcelain", "--", "src/fidelis"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    if source_status:
+        raise RuntimeError("proof requires an unchanged tracked src/fidelis tree")
     manifest = json.loads(Path(manifest_path).read_text())
     expected_before = {record["id"]: record["text"] for record in manifest["direct"]}
     expected_before.update(
@@ -206,6 +215,8 @@ def restore_worker(source, queue, restore, manifest_path):
             capture_output=True,
             text=True,
         ).stdout.strip(),
+        "proof_script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "source_tree_clean": True,
         "scope": {
             "direct": N_DIRECT,
             "duplicate_attempts": N_DUPLICATES,
