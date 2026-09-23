@@ -38,10 +38,10 @@ payloads verified; queue remaining and dead-letter counts are both zero.
 | Duplicate requests / new records | 20 / 0 |
 | Correction links expected / found | 12 / 12 |
 | Queued / replayed / remaining / dead-lettered | 16 / 16 / 0 / 0 |
-| HTTP `/store` latency p50 / p95 | 4.222 / 6.982 ms |
-| Restored vector recall latency p50 / p95 (60 queries) | 1.031 / 1.153 ms |
-| Restored Chroma bytes / remaining queue bytes | 1,706,148 / 0 |
-| Process peak RSS increase during run | 45,793,280 bytes |
+| HTTP `/store` latency p50 / p95 | 3.363 / 5.845 ms |
+| Restored vector recall latency p50 / p95 (60 queries) | 0.637 / 0.725 ms |
+| Restored Chroma bytes / remaining queue bytes | 1,693,860 / 0 |
+| Process peak RSS increase during run | 44,417,024 bytes |
 
 The exact identifiers and correction links are in the JSON artifact rather
 than abbreviated here. Latency, storage, and peak RSS are specific to this

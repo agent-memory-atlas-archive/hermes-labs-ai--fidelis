@@ -149,7 +149,7 @@ def main():
         duplicates = []
         try:
             for i in range(N_DIRECT):
-                rid = str(uuid.uuid5(NAMESPACE, f"direct-{i}"))
+                rid = uuid.uuid5(NAMESPACE, f"direct-{i}").hex
                 text = f"Synthetic issue 62 record {i:04d} describes component {i % 17} status {i % 23}."
                 status, body, elapsed = h.post("/store", {"text": text, "id": rid})
                 write_ms.append(elapsed)
@@ -161,7 +161,7 @@ def main():
                 prior = direct[i]
                 status, body, elapsed = h.post(
                     "/store",
-                    {"text": prior["text"], "id": str(uuid.uuid5(NAMESPACE, f"duplicate-{i}"))},
+                    {"text": prior["text"], "id": uuid.uuid5(NAMESPACE, f"duplicate-{i}").hex},
                 )
                 write_ms.append(elapsed)
                 if (
@@ -173,13 +173,13 @@ def main():
                     raise AssertionError((status, body))
                 duplicates.append(
                     {
-                        "attempted_id": str(uuid.uuid5(NAMESPACE, f"duplicate-{i}")),
+                        "attempted_id": uuid.uuid5(NAMESPACE, f"duplicate-{i}").hex,
                         "existing_id": body["id"],
                     }
                 )
             for i in range(N_CORRECTIONS):
                 prior = direct[i]
-                rid = str(uuid.uuid5(NAMESPACE, f"correction-{i}"))
+                rid = uuid.uuid5(NAMESPACE, f"correction-{i}").hex
                 text = f"Synthetic correction {i:04d} supersedes {prior['id']} with revised component status {i % 19}."
                 status, body, elapsed = h.post(
                     "/store", {"text": text, "id": rid, "supersedes": [prior["id"]]}
@@ -193,7 +193,7 @@ def main():
                 )
             embedder.fail = True
             for i in range(N_QUEUED):
-                rid = str(uuid.uuid5(NAMESPACE, f"queued-{i}"))
+                rid = uuid.uuid5(NAMESPACE, f"queued-{i}").hex
                 text = f"Synthetic queued record {i:04d} survives a simulated embedding outage with category {i % 7}."
                 status, body, elapsed = h.post("/store", {"text": text, "id": rid})
                 write_ms.append(elapsed)
