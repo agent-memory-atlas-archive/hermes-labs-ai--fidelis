@@ -259,7 +259,7 @@ def main():
             start = time.perf_counter()
             result = restored_memory.vector_store.search(
                 query=item["text"],
-                vectors=DeterministicEmbedder.vector(item["text"]),
+                vectors=[DeterministicEmbedder.vector(item["text"])],
                 top_k=5,
                 filters={"user_id": USER},
             )

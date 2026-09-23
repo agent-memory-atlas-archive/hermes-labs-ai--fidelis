@@ -15,12 +15,12 @@
   },
   "commit": "f8055e7ff5e68b90898edf208c1153d5e6cf4ff4",
   "growth_bytes": {
-    "process_peak_rss_after_bytes": 166313984,
-    "process_peak_rss_before_bytes": 122945536,
-    "process_peak_rss_delta_bytes": 43368448,
-    "restored_chroma_store": 1718436,
+    "process_peak_rss_after_bytes": 170557440,
+    "process_peak_rss_before_bytes": 124764160,
+    "process_peak_rss_delta_bytes": 45793280,
+    "restored_chroma_store": 1706148,
     "restored_queue": 0,
-    "restored_store_plus_queue": 1718436
+    "restored_store_plus_queue": 1706148
   },
   "identifiers": {
     "corrections": [
@@ -358,12 +358,12 @@
   },
   "latency": {
     "restored_vector_recall": {
-      "p50_ms": 0.683,
-      "p95_ms": 0.795
+      "p50_ms": 1.031,
+      "p95_ms": 1.153
     },
     "store_http": {
-      "p50_ms": 3.219,
-      "p95_ms": 5.616
+      "p50_ms": 4.222,
+      "p95_ms": 6.982
     }
   },
   "limitations": [
