@@ -106,7 +106,7 @@ def _cmd_cursor_install(args) -> int:
         return 1
     try:
         config = json.loads(path.read_text()) if path.exists() else {}
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         print(f"error: cannot read Cursor MCP config at {path}: {exc}", file=sys.stderr)
         return 1
     if not isinstance(config, dict) or not isinstance(config.get("mcpServers", {}), dict):
@@ -146,7 +146,7 @@ def _cmd_cursor_uninstall(args) -> int:
         return 0
     try:
         config = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         print(f"error: cannot read Cursor MCP config at {path}: {exc}", file=sys.stderr)
         return 1
     if not isinstance(config, dict) or not isinstance(config.get("mcpServers", {}), dict):
